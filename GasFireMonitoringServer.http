@@ -1,0 +1,6 @@
+@GasFireMonitoringServer_HostAddress = http://localhost:5208
+
+GET {{GasFireMonitoringServer_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
