@@ -79,11 +79,35 @@ try
         await connection.OpenAsync();
         Console.WriteLine("✅ Direct MySQL connection successful!");
 
+        // Test sensor_last_values table structure
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+                SELECT COLUMN_NAME, IS_NULLABLE, DATA_TYPE 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = 'plcnext_data' 
+                AND TABLE_NAME = 'sensor_last_values'
+                AND COLUMN_NAME IN ('tag_name', 'site_name', 'channel_id')";
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                Console.WriteLine("\n📊 Table structure check:");
+                while (await reader.ReadAsync())
+                {
+                    var columnName = reader.GetString(0);
+                    var isNullable = reader.GetString(1);
+                    var dataType = reader.GetString(2);
+                    Console.WriteLine($"  - {columnName}: {dataType} (nullable: {isNullable})");
+                }
+            }
+        }
+
+        // Count sensors
         using (var command = connection.CreateCommand())
         {
             command.CommandText = "SELECT COUNT(*) FROM sensor_last_values";
             var count = await command.ExecuteScalarAsync();
-            Console.WriteLine($"✅ Found {count} sensors in database");
+            Console.WriteLine($"\n✅ Found {count} sensors in database");
         }
     }
 }
@@ -91,6 +115,9 @@ catch (Exception ex)
 {
     Console.WriteLine($"❌ Database connection failed: {ex.Message}");
     Console.WriteLine($"Full error: {ex}");
+
+    // Don't stop the app, but log the error
+    app.Logger.LogError(ex, "Database connection test failed");
 }
 
 // Configure the HTTP request pipeline (middleware)

@@ -51,8 +51,26 @@ namespace GasFireMonitoringServer.Services
             {
                 _logger.LogInformation("Connected to MQTT broker");
 
-                // Subscribe to topics
-                await _mqttClient.SubscribeAsync(_settings.TopicPattern);
+                try
+                {
+                    // Subscribe to topics
+                    var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+                        .WithTopicFilter(f => f.WithTopic(_settings.TopicPattern))
+                        .Build();
+
+                    var subscribeResult = await _mqttClient.SubscribeAsync(subscribeOptions);
+
+                    _logger.LogInformation($"Subscribed to topic pattern: {_settings.TopicPattern}");
+
+                    foreach (var item in subscribeResult.Items)
+                    {
+                        _logger.LogInformation($"Subscription result - Topic: {item.TopicFilter.Topic}, Result: {item.ResultCode}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to subscribe to MQTT topics");
+                }
 
                 // Notify listeners
                 ConnectionChanged?.Invoke(this, true);

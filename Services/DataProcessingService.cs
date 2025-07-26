@@ -41,33 +41,55 @@ namespace GasFireMonitoringServer.Services
         {
             try
             {
+                _logger.LogInformation($"MQTT message received: {message}");
+
                 // Split topic and payload
                 var parts = message.Split('|');
-                if (parts.Length != 2) return;
+                if (parts.Length != 2)
+                {
+                    _logger.LogWarning($"Invalid message format. Expected 'topic|payload', got: {message}");
+                    return;
+                }
 
                 var topic = parts[0];
                 var payload = parts[1];
 
+                _logger.LogInformation($"Processing - Topic: {topic}, Payload length: {payload.Length}");
+
                 // Parse topic: /PLCNEXT/5_PanouHurezani/CH41
                 var topicParts = topic.Split('/').Where(p => !string.IsNullOrEmpty(p)).ToArray();
-                if (topicParts.Length < 3) return;
+                if (topicParts.Length < 3)
+                {
+                    _logger.LogWarning($"Invalid topic format. Expected at least 3 parts, got: {topicParts.Length}");
+                    return;
+                }
 
                 var siteInfo = topicParts[1];  // "5_PanouHurezani"
                 var channel = topicParts[2];    // "CH41" or "Alarms"
 
                 // Extract site ID and name
                 var siteParts = siteInfo.Split('_', 2);
-                var siteId = int.Parse(siteParts[0]);
+                if (!int.TryParse(siteParts[0], out var siteId))
+                {
+                    _logger.LogWarning($"Could not parse site ID from: {siteInfo}");
+                    return;
+                }
                 var siteName = siteParts.Length > 1 ? siteParts[1] : "Unknown";
 
+                _logger.LogInformation($"Parsed - Site: {siteId}_{siteName}, Channel: {channel}");
+
                 // Process based on channel
-                if (channel.ToLower() == "alarms")
+                if (channel.ToLower() == "alarms" || channel.ToLower() == "alarm")
                 {
                     await ProcessAlarm(siteId, siteName, payload);
                 }
                 else if (channel.StartsWith("CH"))
                 {
                     await ProcessSensorData(siteId, siteName, channel, payload);
+                }
+                else
+                {
+                    _logger.LogWarning($"Unknown channel type: {channel}");
                 }
             }
             catch (Exception ex)
@@ -81,9 +103,6 @@ namespace GasFireMonitoringServer.Services
         {
             try
             {
-                // Log the raw payload for debugging
-                _logger.LogDebug($"Processing {channel} - Payload: {payload}");
-
                 // Parse JSON payload
                 var json = JsonDocument.Parse(payload);
                 var root = json.RootElement;
@@ -98,8 +117,14 @@ namespace GasFireMonitoringServer.Services
                 var tagName = GetJsonString(root, $"strCH{channelId}_TAG", "");
                 var detType = GetJsonValue(root, $"iCH{channelId}_DetType", 0);
 
+                _logger.LogDebug($"Extracted values - Tag: {tagName}, mA: {currentMa}, PV: {processValue}, Status: {detStatus}, Type: {detType}");
+
                 // Skip if no tag name
-                if (string.IsNullOrEmpty(tagName)) return;
+                if (string.IsNullOrEmpty(tagName))
+                {
+                    _logger.LogWarning($"No tag name found for {channel} at site {siteId}");
+                    return;
+                }
 
                 // Create a new scope for database access
                 using var scope = _serviceProvider.CreateScope();
@@ -123,19 +148,22 @@ namespace GasFireMonitoringServer.Services
                     }
 
                     // Update sensor values
-                    // Cast doubles to integers for enum properties and integer parameters
+                    sensor.TagName = tagName;  // <-- IMPORTANT: Set the tag name!
+                    sensor.SiteName = siteName; // <-- Also set site name
                     sensor.DetectorType = (int)(DetectorType)(int)detType;
                     sensor.ProcessValue = processValue;
                     sensor.CurrentValue = currentMa;
-                    sensor.Status = (int)(SensorStatus)(int)detStatus; // <-- FIXED LINE
+                    sensor.Status = (int)(SensorStatus)(int)detStatus;
                     sensor.StatusText = GetStatusText((int)detStatus);
                     sensor.Units = GetUnitsForType((int)detType);
                     sensor.LastUpdated = DateTime.UtcNow;
+                    sensor.Topic = $"/PLCNEXT/{siteId}_{siteName}/{channel}"; // Store the topic
+                    sensor.RawJson = payload; // Store the raw JSON for debugging
 
                     // Save to database
                     await dbContext.SaveChangesAsync();
 
-                    _logger.LogInformation($"Updated sensor {tagName} - Value: {processValue} {sensor.Units}");
+                    _logger.LogInformation($"Updated sensor {tagName} at site {siteName} - Status: {sensor.StatusText}");
 
                     // Send real-time update to connected clients
                     await MonitoringHub.SendSensorUpdate(_hubContext, siteId, new
@@ -165,16 +193,56 @@ namespace GasFireMonitoringServer.Services
         {
             try
             {
-                // Parse alarm format: "DT#2024-11-02-23:01:15.10, Alarm Level 1, KGD-004"
-                var parts = payload.Split(',').Select(p => p.Trim()).ToArray();
-                if (parts.Length < 3) return;
+                _logger.LogInformation($"Processing alarm - Site: {siteId}_{siteName}, Payload: {payload}");
 
-                var alarmText = parts[1];
+                // Parse alarm format: "DT#2024-11-27-07:28:40.99, Alarm Level 2, Det_01"
+                var parts = payload.Split(',').Select(p => p.Trim()).ToArray();
+                if (parts.Length < 3)
+                {
+                    _logger.LogWarning($"Invalid alarm format. Expected 3 parts, got {parts.Length}. Payload: {payload}");
+                    return;
+                }
+
+                // Extract sensor tag (third part)
                 var sensorTag = parts[2];
 
-                // Determine alarm level
-                var alarmLevel = alarmText.Contains("Level 2") ? 2 : 1;
-                var alarmType = alarmLevel == 2 ? SensorStatus.AlarmLevel2 : SensorStatus.AlarmLevel1;
+                // Extract alarm description (second part - e.g. "Alarm Level 2", "Detector Fault", etc.)
+                var alarmDescription = parts[1];
+
+                // Parse timestamp from "DT#2024-11-27-07:28:40.99"
+                DateTime alarmTimestamp = DateTime.UtcNow; // Default to now
+                var timestampStr = parts[0];
+                if (timestampStr.StartsWith("DT#"))
+                {
+                    try
+                    {
+                        // Remove "DT#" prefix
+                        var dateStr = timestampStr.Substring(3);
+
+                        // Parse the specific format: 2024-11-27-22:34:23.55
+                        // Split by dash to separate date and time parts
+                        var dateTimeParts = dateStr.Split('-');
+                        if (dateTimeParts.Length >= 4)
+                        {
+                            // Reconstruct in a standard format: "2024-11-27 22:34:23.55"
+                            var year = dateTimeParts[0];
+                            var month = dateTimeParts[1];
+                            var day = dateTimeParts[2];
+                            var time = string.Join(":", dateTimeParts.Skip(3)); // Join remaining parts as time
+
+                            var standardFormat = $"{year}-{month}-{day} {time}";
+                            alarmTimestamp = DateTime.Parse(standardFormat, System.Globalization.CultureInfo.InvariantCulture);
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"Unexpected timestamp format: {dateStr}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Could not parse alarm timestamp: {timestampStr}. Using current time. Error: {ex.Message}");
+                    }
+                }
 
                 // Create a new scope for database access
                 using var scope = _serviceProvider.CreateScope();
@@ -186,16 +254,15 @@ namespace GasFireMonitoringServer.Services
                     SiteId = siteId,
                     SiteName = siteName,
                     SensorTag = sensorTag,
-                    AlarmType = alarmType,
-                    AlarmLevel = alarmLevel,
-                    Timestamp = DateTime.UtcNow,
-                    RawMessage = payload
+                    AlarmMessage = alarmDescription,  // Just the alarm description part
+                    RawMessage = payload,             // Complete message for reference
+                    Timestamp = alarmTimestamp
                 };
 
                 dbContext.Alarms.Add(alarm);
                 await dbContext.SaveChangesAsync();
 
-                _logger.LogWarning($"Alarm recorded: {siteName} - {sensorTag} - Level {alarmLevel}");
+                _logger.LogWarning($"Alarm recorded: {siteName} - {sensorTag} - {alarmDescription}");
 
                 // Send real-time alarm notification to connected clients
                 await MonitoringHub.SendAlarmNotification(_hubContext, siteId, new
@@ -204,14 +271,14 @@ namespace GasFireMonitoringServer.Services
                     siteId = siteId,
                     siteName = siteName,
                     sensorTag = sensorTag,
-                    alarmLevel = alarmLevel,
-                    timestamp = alarm.Timestamp,
-                    message = payload
+                    alarmMessage = alarmDescription,
+                    rawMessage = payload,
+                    timestamp = alarm.Timestamp
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing alarm");
+                _logger.LogError(ex, $"Error processing alarm. Payload: {payload}");
             }
         }
 
@@ -220,16 +287,34 @@ namespace GasFireMonitoringServer.Services
         {
             if (root.TryGetProperty(propertyName, out var element))
             {
-                // First try to get as double directly
-                if (element.TryGetDouble(out var value))
-                    return value;
-
-                // If it's a string, try to parse it (handles scientific notation)
-                if (element.ValueKind == JsonValueKind.String)
+                // Handle different JSON value types
+                switch (element.ValueKind)
                 {
-                    var stringValue = element.GetString();
-                    if (!string.IsNullOrEmpty(stringValue) && double.TryParse(stringValue, out var parsed))
-                        return parsed;
+                    case JsonValueKind.Number:
+                        if (element.TryGetDouble(out var doubleValue))
+                            return doubleValue;
+                        break;
+
+                    case JsonValueKind.String:
+                        var stringValue = element.GetString();
+                        if (!string.IsNullOrEmpty(stringValue))
+                        {
+                            // Try to parse as double (handles scientific notation)
+                            if (double.TryParse(stringValue,
+                                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowExponent,
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                out var parsed))
+                            {
+                                return parsed;
+                            }
+
+                            // Try to parse as integer
+                            if (int.TryParse(stringValue, out var intValue))
+                            {
+                                return intValue;
+                            }
+                        }
+                        break;
                 }
             }
             return defaultValue;

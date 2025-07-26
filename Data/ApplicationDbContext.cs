@@ -54,11 +54,13 @@ namespace GasFireMonitoringServer.Data
                 // Configure properties
                 entity.Property(e => e.SiteName).HasMaxLength(100);
                 entity.Property(e => e.SensorTag).HasMaxLength(50);
+                entity.Property(e => e.AlarmMessage).HasMaxLength(200);
                 entity.Property(e => e.RawMessage).HasMaxLength(500);
 
-                // Create index for faster queries
+                // Create indexes for faster queries
                 entity.HasIndex(e => e.SiteId);
                 entity.HasIndex(e => e.Timestamp);
+                entity.HasIndex(e => e.SensorTag);
             });
         }
     }

@@ -1,27 +1,32 @@
-﻿using GasFireMonitoringServer.Models.Enums;
+﻿// File: Models/Entities/Alarm.cs
+// Simplified alarm entity that stores only what comes from MQTT
+
+// File: Models/Entities/Alarm.cs
+// Alarm entity that stores both processed and raw alarm data
+
+using System;
 
 namespace GasFireMonitoringServer.Models.Entities
 {
     public class Alarm
     {
-        // Primary key for the alarm entity auto-incermeented by the database
+        // Primary key - auto-incremented by the database
         public int Id { get; set; }
-        // Site information where the alarm is triggered
-        public int SiteId { get; set; } // Identifier for the site where the alarm is triggered
-        public string SiteName { get; set; } // Name of the site where the alarm is triggered
-        //Sensor information that triggered the alarm
-        public string SensorTag { get; set; } // Tag name of the sensor that triggered the alarm
-        public string ChannelID { get; set; } // Unique channel identifier for the sensor that triggered the alarm
-        //Alarm details
-        public SensorStatus AlarmType { get; set; } // Type of alarm (e.g., low-level, high-level, error)
-        public int AlarmLevel { get; set; } // Level of the alarm, used to categorize severity
-        //Value when alarm was triggered
-        public double Value { get; set; } // Value of the sensor when the alarm was triggered
-        public string units { get; set; } // Units of measurement for the sensor value (e.g., ppm, degrees)
-        // Timestamp when the alarm was triggered
-        public DateTime Timestamp { get; set; } // Timestamp of when the alarm was triggered
-        // Original message from MQTT
-        public string RawMessage { get; set; } // Raw message received from MQTT that triggered the alarm
 
+        // Site information
+        public int SiteId { get; set; }
+        public string SiteName { get; set; } = "";
+
+        // Sensor that triggered the alarm
+        public string SensorTag { get; set; } = "";
+
+        // The alarm description (middle part of the message - e.g. "Alarm Level 2", "Detector Fault", etc.)
+        public string AlarmMessage { get; set; } = "";
+
+        // The complete raw message from MQTT for reference
+        public string RawMessage { get; set; } = "";
+
+        // When the alarm occurred
+        public DateTime Timestamp { get; set; }
     }
 }
