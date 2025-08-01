@@ -22,16 +22,16 @@ namespace GasFireMonitoringServer.Controllers
         // Site information (hardcoded for now, could be moved to database)
         private readonly List<SiteInfo> _sites = new()
         {
-            new SiteInfo { Id = 1, Name = "SondaMorEni", County = "Prahova", Latitude = 44.9344, Longitude = 26.0137 },
-            new SiteInfo { Id = 2, Name = "SondaArb", County = "Prahova", Latitude = 44.8567, Longitude = 25.9876 },
-            new SiteInfo { Id = 3, Name = "SondaBerPH01", County = "Prahova", Latitude = 44.9123, Longitude = 26.0456 },
-            new SiteInfo { Id = 4, Name = "ParcMorMic", County = "Prahova", Latitude = 44.9012, Longitude = 26.0234 },
-            new SiteInfo { Id = 5, Name = "PanouHurezani", County = "Gorj", Latitude = 44.8925, Longitude = 23.3731 },
-            new SiteInfo { Id = 6, Name = "PanouZatreni", County = "Gorj", Latitude = 44.9123, Longitude = 23.3456 },
-            new SiteInfo { Id = 7, Name = "ParcBatrani", County = "Prahova", Latitude = 44.8789, Longitude = 26.0123 },
-            new SiteInfo { Id = 8, Name = "ParcCartojani", County = "Prahova", Latitude = 44.8678, Longitude = 25.9987 },
-            new SiteInfo { Id = 9, Name = "ParcTintea", County = "Prahova", Latitude = 44.8901, Longitude = 26.0345 },
-            new SiteInfo { Id = 10, Name = "StatieLucacesti", County = "Prahova", Latitude = 44.9234, Longitude = 26.0567 }
+            new SiteInfo { Id = 1, Name = "SondaMorEni", County = "Prahova", Latitude = 40, Longitude = 10 },
+            new SiteInfo { Id = 2, Name = "SondaArb", County = "Prahova", Latitude = 40, Longitude = 20 },
+            new SiteInfo { Id = 3, Name = "SondaBerPH01", County = "Prahova", Latitude = 40, Longitude = 30 },
+            new SiteInfo { Id = 4, Name = "ParcMorMic", County = "Prahova", Latitude = 40, Longitude = 40 },
+            new SiteInfo { Id = 5, Name = "PanouHurezani", County = "Gorj", Latitude = 55, Longitude = 75 },
+            new SiteInfo { Id = 6, Name = "TUCOBulbuceni", County = "Gorj", Latitude = 65, Longitude = 65 },
+            new SiteInfo { Id = 7, Name = "ParcBatrani", County = "Prahova", Latitude = 40, Longitude = 50 },
+            new SiteInfo { Id = 8, Name = "ParcCartojani", County = "Prahova", Latitude = 40, Longitude = 60 },
+            new SiteInfo { Id = 9, Name = "ParcTintea", County = "Prahova", Latitude = 40, Longitude = 70 },
+            new SiteInfo { Id = 10, Name = "StatieLucacesti", County = "Prahova", Latitude = 40, Longitude = 807 }
         };
 
         public SiteController(ApplicationDbContext context, ILogger<SiteController> logger)
