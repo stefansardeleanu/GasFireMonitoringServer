@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "name": "SondaMorEni",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 10
+  },
+  {
+    "id": 2,
+    "name": "SondaArb",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 20
+  },
+  {
+    "id": 3,
+    "name": "SondaBerPH01",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 30
+  },
+  {
+    "id": 4,
+    "name": "ParcMorMic",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 40
+  },
+  {
+    "id": 5,
+    "name": "PanouHurezani",
+    "county": "Gorj",
+    "latitude": 55,
+    "longitude": 75
+  },
+  {
+    "id": 6,
+    "name": "TUCOBulbuceni",
+    "county": "Gorj",
+    "latitude": 65,
+    "longitude": 65
+  },
+  {
+    "id": 7,
+    "name": "ParcBatrani",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 50
+  },
+  {
+    "id": 8,
+    "name": "ParcCartojani",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 60
+  },
+  {
+    "id": 9,
+    "name": "ParcTintea",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 70
+  },
+  {
+    "id": 10,
+    "name": "StatieLucacesti",
+    "county": "Prahova",
+    "latitude": 40,
+    "longitude": 80
+  }
+]

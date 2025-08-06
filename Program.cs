@@ -6,6 +6,8 @@ using GasFireMonitoringServer.Data;
 using GasFireMonitoringServer.Hubs;
 using GasFireMonitoringServer.Services;
 using GasFireMonitoringServer.Services.Interfaces;
+using GasFireMonitoringServer.Repositories.Interfaces;
+using GasFireMonitoringServer.Repositories;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -52,6 +54,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.Configure<MqttSettings>(
     builder.Configuration.GetSection("MqttSettings"));
 
+// Register Repository Layer (Data Access)
+// Scoped = one instance per HTTP request
+builder.Services.AddScoped<ISensorRepository, SensorRepository>();
+builder.Services.AddScoped<IAlarmRepository, AlarmRepository>();
+builder.Services.AddScoped<ISiteRepository, SiteRepository>();
+
 // Register services (like declaring instances of function blocks)
 // Singleton = only one instance for entire application lifetime
 builder.Services.AddSingleton<IMqttService, MqttService>();
@@ -67,7 +75,6 @@ builder.Services.AddLogging(config =>
 // Build the application
 var app = builder.Build();
 
-
 // Test database connection
 try
 {
@@ -78,89 +85,59 @@ try
     {
         await connection.OpenAsync();
         Console.WriteLine("✅ Direct MySQL connection successful!");
-
-        // Test sensor_last_values table structure
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = @"
-                SELECT COLUMN_NAME, IS_NULLABLE, DATA_TYPE 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_SCHEMA = 'plcnext_data' 
-                AND TABLE_NAME = 'sensor_last_values'
-                AND COLUMN_NAME IN ('tag_name', 'site_name', 'channel_id')";
-
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                Console.WriteLine("\n📊 Table structure check:");
-                while (await reader.ReadAsync())
-                {
-                    var columnName = reader.GetString(0);
-                    var isNullable = reader.GetString(1);
-                    var dataType = reader.GetString(2);
-                    Console.WriteLine($"  - {columnName}: {dataType} (nullable: {isNullable})");
-                }
-            }
-        }
-
-        // Count sensors
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "SELECT COUNT(*) FROM sensor_last_values";
-            var count = await command.ExecuteScalarAsync();
-            Console.WriteLine($"\n✅ Found {count} sensors in database");
-        }
     }
 }
 catch (Exception ex)
 {
     Console.WriteLine($"❌ Database connection failed: {ex.Message}");
-    Console.WriteLine($"Full error: {ex}");
-
-    // Don't stop the app, but log the error
-    app.Logger.LogError(ex, "Database connection test failed");
 }
 
-// Configure the HTTP request pipeline (middleware)
-// This is the order in which requests are processed
-
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();      // Enable Swagger UI
-    app.UseSwaggerUI();    // Access at: https://localhost:port/swagger
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();  // Redirect HTTP to HTTPS
+// Add middleware in order
 app.UseCors("AllowAllOrigins");  // Enable CORS
-app.UseAuthorization();     // Enable authorization
-app.MapControllers();       // Map controller endpoints
-
-// Map SignalR hub
-app.MapHub<MonitoringHub>("/monitoringHub");
+app.UseAuthorization();         // Add authorization
+app.MapControllers();           // Map API controllers
+app.MapHub<MonitoringHub>("/monitoringHub");  // Map SignalR hub
 
 // Start services when application starts
-var mqttService = app.Services.GetRequiredService<IMqttService>();
-var dataProcessingService = app.Services.GetRequiredService<DataProcessingService>();
-
-// Connect to MQTT broker on startup
 app.Lifetime.ApplicationStarted.Register(async () =>
 {
     try
     {
+        var mqttService = app.Services.GetRequiredService<IMqttService>();
         await mqttService.ConnectAsync();
-        Console.WriteLine("MQTT Service started and connected");
+        Console.WriteLine("✅ MQTT Service connected successfully!");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Failed to start MQTT service: {ex.Message}");
+        Console.WriteLine($"❌ MQTT service failed to connect: {ex.Message}");
     }
 });
 
 // Disconnect from MQTT broker on shutdown
 app.Lifetime.ApplicationStopping.Register(async () =>
 {
-    await mqttService.DisconnectAsync();
-    Console.WriteLine("MQTT Service stopped");
+    try
+    {
+        var mqttService = app.Services.GetRequiredService<IMqttService>();
+        await mqttService.DisconnectAsync();
+        Console.WriteLine("MQTT Service disconnected");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error disconnecting MQTT service: {ex.Message}");
+    }
 });
+
+Console.WriteLine("🚀 Gas Fire Monitoring Server is running...");
+Console.WriteLine("📊 Swagger UI available at: http://localhost:5208/swagger");
+Console.WriteLine("🔌 SignalR Hub available at: http://localhost:5208/monitoringHub");
 
 // Run the application
 app.Run();
