@@ -5,7 +5,9 @@ using GasFireMonitoringServer.Configuration;
 using GasFireMonitoringServer.Data;
 using GasFireMonitoringServer.Hubs;
 using GasFireMonitoringServer.Services;
-using GasFireMonitoringServer.Services.Interfaces;
+using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
+using GasFireMonitoringServer.Services.Business.Interfaces;
+using GasFireMonitoringServer.Services.Business;
 using GasFireMonitoringServer.Repositories.Interfaces;
 using GasFireMonitoringServer.Repositories;
 using Microsoft.AspNetCore.Builder;
@@ -59,6 +61,12 @@ builder.Services.Configure<MqttSettings>(
 builder.Services.AddScoped<ISensorRepository, SensorRepository>();
 builder.Services.AddScoped<IAlarmRepository, AlarmRepository>();
 builder.Services.AddScoped<ISiteRepository, SiteRepository>();
+
+// Register Business Service Layer (Domain Logic)
+// Scoped = one instance per HTTP request
+builder.Services.AddScoped<ISensorService, SensorService>();
+builder.Services.AddScoped<IAlarmService, AlarmService>();
+builder.Services.AddScoped<ISiteService, SiteService>();
 
 // Register services (like declaring instances of function blocks)
 // Singleton = only one instance for entire application lifetime

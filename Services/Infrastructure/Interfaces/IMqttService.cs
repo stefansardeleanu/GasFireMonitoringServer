@@ -1,7 +1,7 @@
 ﻿// File: Services/Interfaces/IMqttService.cs
 // An interface defines the "contract" - what methods must exist
 
-namespace GasFireMonitoringServer.Services.Interfaces
+namespace GasFireMonitoringServer.Services.Infrastructure.Interfaces
 {
     public interface IMqttService
     {

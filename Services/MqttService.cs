@@ -9,7 +9,7 @@ using MQTTnet;                    // MQTT library
 using Microsoft.Extensions.Options;  // For reading configuration
 using Microsoft.Extensions.Logging;  // For logging messages
 using GasFireMonitoringServer.Configuration;
-using GasFireMonitoringServer.Services.Interfaces;
+using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
 
 namespace GasFireMonitoringServer.Services
 {

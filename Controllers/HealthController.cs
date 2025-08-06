@@ -5,10 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using GasFireMonitoringServer.Data;
 using GasFireMonitoringServer.Models.Entities;
-using GasFireMonitoringServer.Services.Interfaces;
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
 
 namespace GasFireMonitoringServer.Controllers
 {

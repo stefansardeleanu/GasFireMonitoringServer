@@ -11,8 +11,8 @@ using Microsoft.AspNetCore.SignalR;
 using GasFireMonitoringServer.Data;
 using GasFireMonitoringServer.Models.Entities;
 using GasFireMonitoringServer.Models.Enums;
-using GasFireMonitoringServer.Services.Interfaces;
 using GasFireMonitoringServer.Hubs;
+using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
 
 namespace GasFireMonitoringServer.Services
 {
