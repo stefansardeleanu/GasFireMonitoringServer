@@ -67,6 +67,7 @@ builder.Services.AddScoped<ISiteRepository, SiteRepository>();
 builder.Services.AddScoped<ISensorService, SensorService>();
 builder.Services.AddScoped<IAlarmService, AlarmService>();
 builder.Services.AddScoped<ISiteService, SiteService>();
+builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 
 // Register services (like declaring instances of function blocks)
 // Singleton = only one instance for entire application lifetime

@@ -1,69 +1,26 @@
 ﻿// File: Repositories/SiteRepository.cs
 // Concrete implementation of ISiteRepository
-// Handles site information from configuration file
+// Handles site information from configuration service
 
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
 using GasFireMonitoringServer.Repositories.Interfaces;
+using GasFireMonitoringServer.Services.Business.Interfaces;
 
 namespace GasFireMonitoringServer.Repositories
 {
     /// <summary>
     /// Repository implementation for site data operations
-    /// Reads site information from JSON configuration file
+    /// Uses ConfigurationService for dynamic site configuration
     /// </summary>
     public class SiteRepository : ISiteRepository
     {
+        private readonly IConfigurationService _configurationService;
         private readonly ILogger<SiteRepository> _logger;
-        private readonly string _configurationPath;
-        private List<SiteInfo>? _sites;
-        private DateTime _lastFileRead = DateTime.MinValue;
 
-        public SiteRepository(ILogger<SiteRepository> logger)
+        public SiteRepository(IConfigurationService configurationService, ILogger<SiteRepository> logger)
         {
+            _configurationService = configurationService;
             _logger = logger;
-            // Configuration file path - can be overridden via environment variable
-            _configurationPath = Environment.GetEnvironmentVariable("SITES_CONFIG_PATH")
-                ?? Path.Combine(Directory.GetCurrentDirectory(), "Configuration", "Data", "sites.json");
-        }
-
-        /// <summary>
-        /// Load sites from configuration file with caching
-        /// </summary>
-        private async Task<List<SiteInfo>> LoadSitesAsync()
-        {
-            try
-            {
-                var fileInfo = new FileInfo(_configurationPath);
-
-                // Check if we need to reload the file
-                if (_sites == null || !fileInfo.Exists || fileInfo.LastWriteTime > _lastFileRead)
-                {
-                    _logger.LogDebug("Loading sites from configuration file: {ConfigPath}", _configurationPath);
-
-                    if (!fileInfo.Exists)
-                    {
-                        _logger.LogWarning("Sites configuration file not found at {ConfigPath}", _configurationPath);
-                        return new List<SiteInfo>();
-                    }
-
-                    var jsonContent = await File.ReadAllTextAsync(_configurationPath);
-                    _sites = JsonSerializer.Deserialize<List<SiteInfo>>(jsonContent, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    }) ?? new List<SiteInfo>();
-
-                    _lastFileRead = DateTime.UtcNow;
-                    _logger.LogInformation("Loaded {SiteCount} sites from configuration file", _sites.Count);
-                }
-
-                return _sites;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading sites from configuration file {ConfigPath}", _configurationPath);
-                throw;
-            }
         }
 
         /// <summary>
@@ -74,10 +31,10 @@ namespace GasFireMonitoringServer.Repositories
         {
             try
             {
-                _logger.LogDebug("Retrieving all site information");
+                _logger.LogDebug("Retrieving all site information from configuration");
 
-                var sites = await LoadSitesAsync();
-                return sites.ToList(); // Return copy to prevent external modification
+                var siteConfigs = await _configurationService.GetAllSitesAsync();
+                return _configurationService.ConvertToSiteInfoList(siteConfigs);
             }
             catch (Exception ex)
             {
@@ -96,8 +53,8 @@ namespace GasFireMonitoringServer.Repositories
             {
                 _logger.LogDebug("Retrieving site information for ID {SiteId}", id);
 
-                var sites = await LoadSitesAsync();
-                return sites.FirstOrDefault(s => s.Id == id);
+                var siteConfig = await _configurationService.GetSiteAsync(id);
+                return siteConfig != null ? _configurationService.ConvertToSiteInfo(siteConfig) : null;
             }
             catch (Exception ex)
             {
@@ -116,8 +73,8 @@ namespace GasFireMonitoringServer.Repositories
             {
                 _logger.LogDebug("Checking if site {SiteId} exists", id);
 
-                var sites = await LoadSitesAsync();
-                return sites.Any(s => s.Id == id);
+                var siteConfig = await _configurationService.GetSiteAsync(id);
+                return siteConfig != null;
             }
             catch (Exception ex)
             {
@@ -136,10 +93,8 @@ namespace GasFireMonitoringServer.Repositories
             {
                 _logger.LogDebug("Retrieving sites for county {County}", county);
 
-                var sites = await LoadSitesAsync();
-                return sites
-                    .Where(s => s.County.Equals(county, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                var siteConfigs = await _configurationService.GetSitesByCountyAsync(county);
+                return _configurationService.ConvertToSiteInfoList(siteConfigs);
             }
             catch (Exception ex)
             {
@@ -158,12 +113,8 @@ namespace GasFireMonitoringServer.Repositories
             {
                 _logger.LogDebug("Retrieving all county names");
 
-                var sites = await LoadSitesAsync();
-                return sites
-                    .Select(s => s.County)
-                    .Distinct()
-                    .OrderBy(c => c)
-                    .ToList();
+                var countyConfigs = await _configurationService.GetAllCountiesAsync();
+                return countyConfigs.Select(c => c.Name).OrderBy(name => name);
             }
             catch (Exception ex)
             {

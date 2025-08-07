@@ -3,70 +3,175 @@
     "id": 1,
     "name": "SondaMorEni",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 10
+    "mapX": 45.2,
+    "mapY": 67.8,
+    "layoutMode": "auto",
+    "layoutFile": "site_1_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 2,
     "name": "SondaArb",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 20
+    "mapX": 42.1,
+    "mapY": 65.3,
+    "layoutMode": "auto",
+    "layoutFile": "site_2_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 3,
     "name": "SondaBerPH01",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 30
+    "mapX": 48.7,
+    "mapY": 63.2,
+    "layoutMode": "auto",
+    "layoutFile": "site_3_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 4,
     "name": "ParcMorMic",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 40
+    "mapX": 46.8,
+    "mapY": 69.1,
+    "layoutMode": "auto",
+    "layoutFile": "site_4_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 5,
     "name": "PanouHurezani",
     "county": "Gorj",
-    "latitude": 55,
-    "longitude": 75
+    "mapX": 23.5,
+    "mapY": 45.8,
+    "layoutMode": "svg",
+    "layoutFile": "site_5_layout.svg",
+    "gridConfig": {
+      "columns": 4,
+      "style": "square",
+      "spacing": 12.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 6,
     "name": "TUCOBulbuceni",
     "county": "Gorj",
-    "latitude": 65,
-    "longitude": 65
+    "mapX": 28.2,
+    "mapY": 42.3,
+    "layoutMode": "grid",
+    "layoutFile": "",
+    "gridConfig": {
+      "columns": 3,
+      "style": "horizontal",
+      "spacing": 15.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 7,
     "name": "ParcBatrani",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 50
+    "mapX": 44.3,
+    "mapY": 71.2,
+    "layoutMode": "auto",
+    "layoutFile": "site_7_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 8,
     "name": "ParcCartojani",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 60
+    "mapX": 47.6,
+    "mapY": 64.9,
+    "layoutMode": "auto",
+    "layoutFile": "site_8_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
   },
   {
     "id": 9,
     "name": "ParcTintea",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 70
+    "mapX": 43.9,
+    "mapY": 66.7,
+    "layoutMode": "grid",
+    "layoutFile": "",
+    "gridConfig": {
+      "columns": 0,
+      "style": "compact",
+      "spacing": 8.0,
+      "groupByType": false,
+      "showLabels": true
+    }
   },
   {
     "id": 10,
     "name": "StatieLucacesti",
     "county": "Prahova",
-    "latitude": 40,
-    "longitude": 80
-  }
+    "mapX": 41.2,
+    "mapY": 62,
+    "layoutMode": "auto",
+    "layoutFile": "site_10_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    },
+    {
+      "id": 12,
+      "name": "StatieBratila",
+      "county": "Prahova",
+      "mapX": 41.2,
+      "mapY": 68.5,
+      "layoutMode": "auto",
+      "layoutFile": "site_12_layout.svg",
+      "gridConfig": {
+        "columns": 0,
+        "style": "square",
+        "spacing": 10.0,
+        "groupByType": true,
+        "showLabels": true
+      }
+    }
 ]

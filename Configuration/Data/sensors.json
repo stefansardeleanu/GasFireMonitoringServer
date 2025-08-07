@@ -1,0 +1,142 @@
+[
+  {
+    "siteId": 1,
+    "channelId": "CH41",
+    "layoutX": 25.5,
+    "layoutY": 42.3,
+    "displayName": ""
+  },
+  {
+    "siteId": 1,
+    "channelId": "CH42",
+    "layoutX": 65.2,
+    "layoutY": 38.7,
+    "displayName": ""
+  },
+  {
+    "siteId": 1,
+    "channelId": "CH43",
+    "layoutX": 45.8,
+    "layoutY": 72.1,
+    "displayName": ""
+  },
+  {
+    "siteId": 2,
+    "channelId": "CH41",
+    "layoutX": 35.0,
+    "layoutY": 55.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 2,
+    "channelId": "CH42",
+    "layoutX": 75.0,
+    "layoutY": 35.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 3,
+    "channelId": "CH41",
+    "layoutX": 50.0,
+    "layoutY": 30.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 3,
+    "channelId": "CH42",
+    "layoutX": 30.0,
+    "layoutY": 70.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 3,
+    "channelId": "CH43",
+    "layoutX": 70.0,
+    "layoutY": 70.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 4,
+    "channelId": "CH41",
+    "layoutX": 40.0,
+    "layoutY": 40.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 4,
+    "channelId": "CH42",
+    "layoutX": 60.0,
+    "layoutY": 60.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH41",
+    "layoutX": 20.0,
+    "layoutY": 25.0,
+    "displayName": "Main Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH42",
+    "layoutX": 45.0,
+    "layoutY": 30.0,
+    "displayName": "Secondary Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH43",
+    "layoutX": 70.0,
+    "layoutY": 40.0,
+    "displayName": "Backup Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH44",
+    "layoutX": 25.0,
+    "layoutY": 65.0,
+    "displayName": "Perimeter Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH45",
+    "layoutX": 75.0,
+    "layoutY": 70.0,
+    "displayName": "Exit Detector"
+  },
+  {
+    "siteId": 7,
+    "channelId": "CH41",
+    "layoutX": 30.0,
+    "layoutY": 45.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 7,
+    "channelId": "CH42",
+    "layoutX": 70.0,
+    "layoutY": 55.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 8,
+    "channelId": "CH41",
+    "layoutX": 50.0,
+    "layoutY": 50.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 10,
+    "channelId": "CH41",
+    "layoutX": 40.0,
+    "layoutY": 35.0,
+    "displayName": ""
+  },
+  {
+    "siteId": 10,
+    "channelId": "CH42",
+    "layoutX": 60.0,
+    "layoutY": 65.0,
+    "displayName": ""
+  }
+]

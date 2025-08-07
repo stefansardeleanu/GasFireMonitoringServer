@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Prahova",
+    "sites": [ 1, 2, 3, 4, 7, 8, 9, 10 ],
+    "displayName": "Prahova County",
+    "description": "Gas monitoring sites in Prahova county - main operational area"
+  },
+  {
+    "name": "Gorj",
+    "sites": [ 5, 6 ],
+    "displayName": "Gorj County",
+    "description": "Gas monitoring sites in Gorj county - secondary operational area"
+  }
+]
