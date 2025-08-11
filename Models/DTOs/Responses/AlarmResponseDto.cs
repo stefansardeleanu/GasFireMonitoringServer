@@ -1,7 +1,7 @@
 ﻿// File: Models/DTOs/AlarmDto.cs
-namespace GasFireMonitoringServer.Models.DTOs
+namespace GasFireMonitoringServer.Models.DTOs.Responses
 {
-    public class AlarmDto
+    public class AlarmResponseDto
     {
         public int Id { get; set; }
         public int SiteId { get; set; }

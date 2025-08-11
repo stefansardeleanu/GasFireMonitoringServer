@@ -1,12 +1,13 @@
 ﻿// File: Controllers/SensorController.cs
-// REST API controller for sensor data
+// REST API controller for sensor data - REFACTORED to use service layer
 
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using GasFireMonitoringServer.Data;
+using Microsoft.AspNetCore.Authorization;
+using GasFireMonitoringServer.Services.Business.Interfaces;
+using GasFireMonitoringServer.Models.DTOs.Common;
+using GasFireMonitoringServer.Models.DTOs.Requests;
+using GasFireMonitoringServer.Models.DTOs.Responses;
 using GasFireMonitoringServer.Models.Entities;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace GasFireMonitoringServer.Controllers
 {
@@ -15,59 +16,16 @@ namespace GasFireMonitoringServer.Controllers
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    // [Authorize] // All endpoints require authentication
     public class SensorController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ISensorService _sensorService;
         private readonly ILogger<SensorController> _logger;
 
-        public SensorController(ApplicationDbContext context, ILogger<SensorController> logger)
+        public SensorController(ISensorService sensorService, ILogger<SensorController> logger)
         {
-            _context = context;
+            _sensorService = sensorService;
             _logger = logger;
-        }
-
-        /// <summary>
-        /// Get all sensors for a specific site
-        /// </summary>
-        /// <param name="siteId">The site ID</param>
-        /// <returns>List of sensors</returns>
-        [HttpGet("site/{siteId}")]
-        public async Task<IActionResult> GetSensorsBySite(int siteId)
-        {
-            try
-            {
-                var sensors = await _context.Sensors
-                    .Where(s => s.SiteId == siteId)
-                    .OrderBy(s => s.ChannelId)
-                    .Select(s => new
-                    {
-                        s.Id,
-                        s.SiteId,
-                        s.SiteName,
-                        s.ChannelId,
-                        s.TagName,
-                        s.DetectorType,
-                        s.ProcessValue,
-                        s.CurrentValue,
-                        s.Status,
-                        s.StatusText,
-                        s.Units,
-                        s.LastUpdated
-                    })
-                    .ToListAsync();
-
-                return Ok(new
-                {
-                    success = true,
-                    count = sensors.Count,
-                    data = sensors
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error retrieving sensors for site {siteId}");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving sensors" });
-            }
         }
 
         /// <summary>
@@ -75,45 +33,72 @@ namespace GasFireMonitoringServer.Controllers
         /// </summary>
         /// <returns>List of all sensors grouped by site</returns>
         [HttpGet]
-        public async Task<IActionResult> GetAllSensors()
+        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetAllSensors()
         {
             try
             {
-                var sensors = await _context.Sensors
-                    .GroupBy(s => new { s.SiteId, s.SiteName })
-                    .Select(g => new
-                    {
-                        siteId = g.Key.SiteId,
-                        siteName = g.Key.SiteName,
-                        sensorCount = g.Count(),
-                        sensors = g.Select(s => new
-                        {
-                            s.Id,
-                            s.ChannelId,
-                            s.TagName,
-                            s.DetectorType,
-                            s.ProcessValue,
-                            s.CurrentValue,
-                            s.Status,
-                            s.StatusText,
-                            s.Units,
-                            s.LastUpdated
-                        }).OrderBy(s => s.ChannelId).ToList()
-                    })
-                    .OrderBy(g => g.siteId)
-                    .ToListAsync();
+                _logger.LogInformation("Getting all sensors with business logic");
 
-                return Ok(new
-                {
-                    success = true,
-                    siteCount = sensors.Count,
-                    data = sensors
-                });
+                var sensors = await _sensorService.GetAllSensorsAsync();
+
+                // Convert entities to DTOs
+                var sensorDtos = sensors.Select(ConvertToSensorResponseDto).ToList();
+
+                _logger.LogInformation("Retrieved {Count} sensors", sensorDtos.Count);
+
+                return Ok(ApiResponseDto<List<SensorResponseDto>>.SuccessResult(
+                    sensorDtos,
+                    sensorDtos.Count,
+                    $"Retrieved {sensorDtos.Count} sensors successfully"));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving all sensors");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving sensors" });
+                _logger.LogError(ex, "Error retrieving sensors");
+                return StatusCode(500, ApiResponseDto<List<SensorResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving sensors"));
+            }
+        }
+
+        /// <summary>
+        /// Get all sensors for a specific site
+        /// </summary>
+        /// <param name="siteId">The site ID</param>
+        /// <returns>List of sensors for the specified site</returns>
+        [HttpGet("site/{siteId}")]
+        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetSensorsBySite(int siteId)
+        {
+            try
+            {
+                _logger.LogInformation("Getting sensors for site {SiteId}", siteId);
+
+                if (siteId <= 0)
+                {
+                    return BadRequest(ApiResponseDto<List<SensorResponseDto>>.ErrorResult(
+                        "Site ID must be greater than 0"));
+                }
+
+                var sensors = await _sensorService.GetSensorsBySiteAsync(siteId);
+
+                // Convert entities to DTOs
+                var sensorDtos = sensors.Select(ConvertToSensorResponseDto).ToList();
+
+                _logger.LogInformation("Retrieved {Count} sensors for site {SiteId}", sensorDtos.Count, siteId);
+
+                return Ok(ApiResponseDto<List<SensorResponseDto>>.SuccessResult(
+                    sensorDtos,
+                    sensorDtos.Count,
+                    $"Retrieved {sensorDtos.Count} sensors for site {siteId}"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid site ID: {SiteId}", siteId);
+                return BadRequest(ApiResponseDto<List<SensorResponseDto>>.ErrorResult(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving sensors for site {SiteId}", siteId);
+                return StatusCode(500, ApiResponseDto<List<SensorResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving sensors"));
             }
         }
 
@@ -123,148 +108,156 @@ namespace GasFireMonitoringServer.Controllers
         /// <param name="id">Sensor ID</param>
         /// <returns>Sensor details</returns>
         [HttpGet("{id}")]
-        public async Task<IActionResult> GetSensor(int id)
+        public async Task<ActionResult<ApiResponseDto<SensorResponseDto>>> GetSensor(int id)
         {
             try
             {
-                var sensor = await _context.Sensors
-                    .Where(s => s.Id == id)
-                    .Select(s => new
-                    {
-                        s.Id,
-                        s.SiteId,
-                        s.SiteName,
-                        s.ChannelId,
-                        s.TagName,
-                        s.DetectorType,
-                        s.ProcessValue,
-                        s.CurrentValue,
-                        s.Status,
-                        s.StatusText,
-                        s.Units,
-                        s.LastUpdated,
-                        s.Topic
-                    })
-                    .FirstOrDefaultAsync();
+                _logger.LogInformation("Getting sensor {SensorId}", id);
+
+                if (id <= 0)
+                {
+                    return BadRequest(ApiResponseDto<SensorResponseDto>.ErrorResult(
+                        "Sensor ID must be greater than 0"));
+                }
+
+                var sensor = await _sensorService.GetSensorByIdAsync(id);
 
                 if (sensor == null)
                 {
-                    return NotFound(new { success = false, message = "Sensor not found" });
+                    _logger.LogWarning("Sensor {SensorId} not found", id);
+                    return NotFound(ApiResponseDto<SensorResponseDto>.NotFoundResult(
+                        $"Sensor with ID {id} not found"));
                 }
 
-                return Ok(new
-                {
-                    success = true,
-                    data = sensor
-                });
+                // Convert entity to DTO
+                var sensorDto = ConvertToSensorResponseDto(sensor);
+
+                _logger.LogInformation("Retrieved sensor {SensorId}: {TagName}", id, sensor.TagName);
+
+                return Ok(ApiResponseDto<SensorResponseDto>.SuccessResult(
+                    sensorDto,
+                    $"Retrieved sensor {sensor.TagName} successfully"));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving sensor {id}");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving the sensor" });
+                _logger.LogError(ex, "Error retrieving sensor {SensorId}", id);
+                return StatusCode(500, ApiResponseDto<SensorResponseDto>.ErrorResult(
+                    "An error occurred while retrieving the sensor"));
             }
         }
 
         /// <summary>
-        /// Get sensors in alarm state
+        /// Get sensors currently in alarm state
         /// </summary>
-        /// <returns>List of sensors currently in alarm</returns>
+        /// <returns>List of sensors with active alarms</returns>
         [HttpGet("alarms")]
-        public async Task<IActionResult> GetSensorsInAlarm()
+        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetSensorsInAlarm()
         {
             try
             {
-                var alarmedSensors = await _context.Sensors
-                    .Where(s => s.Status > 0) // Status > 0 means some kind of alarm
-                    .OrderBy(s => s.SiteId)
-                    .ThenBy(s => s.ChannelId)
-                    .Select(s => new
-                    {
-                        s.Id,
-                        s.SiteId,
-                        s.SiteName,
-                        s.ChannelId,
-                        s.TagName,
-                        s.DetectorType,
-                        s.ProcessValue,
-                        s.CurrentValue,
-                        s.Status,
-                        s.StatusText,
-                        s.Units,
-                        s.LastUpdated
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Getting sensors currently in alarm state");
 
-                return Ok(new
-                {
-                    success = true,
-                    count = alarmedSensors.Count,
-                    data = alarmedSensors
-                });
+                var sensors = await _sensorService.GetAlarmedSensorsAsync();
+
+                // Convert entities to DTOs
+                var sensorDtos = sensors.Select(ConvertToSensorResponseDto).ToList();
+
+                _logger.LogInformation("Retrieved {Count} sensors in alarm state", sensorDtos.Count);
+
+                return Ok(ApiResponseDto<List<SensorResponseDto>>.SuccessResult(
+                    sensorDtos,
+                    sensorDtos.Count,
+                    $"Retrieved {sensorDtos.Count} sensors in alarm state"));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving sensors in alarm");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving alarm sensors" });
+                _logger.LogError(ex, "Error retrieving sensors in alarm state");
+                return StatusCode(500, ApiResponseDto<List<SensorResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving sensors in alarm state"));
             }
         }
 
         /// <summary>
-        /// Get sensor statistics for a site
+        /// Get sensor statistics for dashboard
         /// </summary>
-        /// <param name="siteId">Site ID</param>
-        /// <returns>Statistics about sensors at the site</returns>
-        [HttpGet("site/{siteId}/stats")]
-        public async Task<IActionResult> GetSiteStatistics(int siteId)
+        /// <param name="siteId">Optional site ID to filter statistics</param>
+        /// <returns>Sensor count statistics by status and type</returns>
+        [HttpGet("statistics")]
+        public async Task<ActionResult<ApiResponseDto<object>>> GetSensorStatistics([FromQuery] int? siteId = null)
         {
             try
             {
-                var sensors = await _context.Sensors
-                    .Where(s => s.SiteId == siteId)
-                    .ToListAsync();
+                _logger.LogInformation("Getting sensor statistics for site: {SiteId}", siteId?.ToString() ?? "All");
 
-                var stats = new
+                SensorStats statistics;
+                if (siteId.HasValue)
                 {
-                    totalSensors = sensors.Count,
-                    normalSensors = sensors.Count(s => s.Status == 0),
-                    alarmLevel1 = sensors.Count(s => s.Status == 1),
-                    alarmLevel2 = sensors.Count(s => s.Status == 2),
-                    errorSensors = sensors.Count(s => s.Status >= 3),
-                    sensorTypes = sensors.GroupBy(s => s.DetectorType)
-                        .Select(g => new
-                        {
-                            type = g.Key,
-                            typeName = GetDetectorTypeName(g.Key),
-                            count = g.Count()
-                        })
-                        .ToList()
-                };
+                    statistics = await _sensorService.GetSensorStatsAsync(siteId.Value);
+                }
+                else
+                {
+                    statistics = await _sensorService.GetSystemSensorStatsAsync();
+                }
 
-                return Ok(new
-                {
-                    success = true,
-                    siteId = siteId,
-                    data = stats
-                });
+                _logger.LogInformation("Retrieved sensor statistics successfully");
+
+                return Ok(ApiResponseDto<object>.SuccessResult(
+                    statistics,
+                    "Retrieved sensor statistics successfully"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid site ID for statistics: {SiteId}", siteId);
+                return BadRequest(ApiResponseDto<object>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving statistics for site {siteId}");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving statistics" });
+                _logger.LogError(ex, "Error retrieving sensor statistics");
+                return StatusCode(500, ApiResponseDto<object>.ErrorResult(
+                    "An error occurred while retrieving sensor statistics"));
             }
         }
 
-        // Helper method to get detector type name
-        private string GetDetectorTypeName(int type)
+        #region Helper Methods
+
+        /// <summary>
+        /// Convert Sensor entity to SensorResponseDto
+        /// </summary>
+        private static SensorResponseDto ConvertToSensorResponseDto(Sensor sensor)
         {
-            return type switch
+            return new SensorResponseDto
             {
-                1 => "Gas",
-                2 => "Flame",
-                3 => "Manual Call",
-                4 => "Smoke",
-                _ => "Unknown"
+                Id = sensor.Id,
+                SiteId = sensor.SiteId,
+                SiteName = sensor.SiteName,
+                ChannelId = sensor.ChannelId,
+                TagName = sensor.TagName,
+                DetectorTypeName = GetDetectorTypeName(sensor.DetectorType),
+                ProcessValue = sensor.ProcessValue,
+                CurrentValue = sensor.CurrentValue,
+                StatusText = sensor.StatusText,
+                Units = sensor.Units,
+                LastUpdated = sensor.LastUpdated,
+                IsOnline = (DateTime.UtcNow - sensor.LastUpdated).TotalMinutes < 5
             };
         }
+
+        /// <summary>
+        /// Convert detector type ID to human-readable name
+        /// </summary>
+        private static string GetDetectorTypeName(int detectorType)
+        {
+            return detectorType switch
+            {
+                1 => "Gas Detector",
+                2 => "Fire Detector",
+                3 => "Smoke Detector",
+                4 => "Temperature Sensor",
+                5 => "Pressure Sensor",
+                _ => $"Type {detectorType}"
+            };
+        }
+
+        #endregion
     }
 }

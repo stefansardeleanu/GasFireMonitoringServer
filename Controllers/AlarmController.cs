@@ -1,13 +1,13 @@
 ﻿// File: Controllers/AlarmController.cs
-// REST API controller for alarm data
+// REST API controller for alarm data - REFACTORED to use service layer
 
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using GasFireMonitoringServer.Data;
+using Microsoft.AspNetCore.Authorization;
+using GasFireMonitoringServer.Services.Business.Interfaces;
+using GasFireMonitoringServer.Models.DTOs.Common;
+using GasFireMonitoringServer.Models.DTOs.Requests;
+using GasFireMonitoringServer.Models.DTOs.Responses;
 using GasFireMonitoringServer.Models.Entities;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace GasFireMonitoringServer.Controllers
 {
@@ -16,79 +16,63 @@ namespace GasFireMonitoringServer.Controllers
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    // [Authorize] // All endpoints require authentication
     public class AlarmController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IAlarmService _alarmService;
         private readonly ILogger<AlarmController> _logger;
 
-        public AlarmController(ApplicationDbContext context, ILogger<AlarmController> logger)
+        public AlarmController(IAlarmService alarmService, ILogger<AlarmController> logger)
         {
-            _context = context;
+            _alarmService = alarmService;
             _logger = logger;
         }
 
         /// <summary>
         /// Get alarms with optional filtering
         /// </summary>
-        /// <param name="siteId">Optional site ID filter</param>
-        /// <param name="startDate">Optional start date filter</param>
-        /// <param name="endDate">Optional end date filter</param>
-        /// <param name="limit">Maximum number of records to return (default 100)</param>
-        /// <returns>List of alarms</returns>
+        /// <param name="filter">Filter criteria for alarms</param>
+        /// <returns>List of alarms matching filter criteria</returns>
         [HttpGet]
-        public async Task<IActionResult> GetAlarms(
-            [FromQuery] int? siteId = null,
-            [FromQuery] DateTime? startDate = null,
-            [FromQuery] DateTime? endDate = null,
-            [FromQuery] int limit = 100)
+        public async Task<ActionResult<ApiResponseDto<List<AlarmResponseDto>>>> GetAlarms([FromQuery] AlarmFilterRequestDto? filter = null)
         {
             try
             {
-                var query = _context.Alarms.AsQueryable();
+                _logger.LogInformation("Getting alarms with filter: SiteId={SiteId}, StartDate={StartDate}, EndDate={EndDate}",
+                    filter?.SiteId, filter?.StartDate, filter?.EndDate);
 
-                // Apply filters
-                if (siteId.HasValue)
+                // Validate model if provided
+                if (filter != null && !ModelState.IsValid)
                 {
-                    query = query.Where(a => a.SiteId == siteId.Value);
+                    var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage);
+                    return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                        $"Invalid filter parameters: {string.Join(", ", errors)}"));
                 }
 
-                if (startDate.HasValue)
-                {
-                    query = query.Where(a => a.Timestamp >= startDate.Value);
-                }
+                // Convert DTO filter to service filter
+                var serviceFilter = ConvertToServiceFilter(filter);
+                var alarms = await _alarmService.GetAlarmsAsync(serviceFilter);
 
-                if (endDate.HasValue)
-                {
-                    query = query.Where(a => a.Timestamp <= endDate.Value);
-                }
+                // Convert entities to DTOs
+                var alarmDtos = alarms.Select(ConvertToAlarmResponseDto).ToList();
 
-                // Get alarms ordered by timestamp descending (newest first)
-                var alarms = await query
-                    .OrderByDescending(a => a.Timestamp)
-                    .Take(limit)
-                    .Select(a => new
-                    {
-                        a.Id,
-                        a.SiteId,
-                        a.SiteName,
-                        a.SensorTag,
-                        a.AlarmMessage,
-                        a.RawMessage,
-                        a.Timestamp
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Retrieved {Count} alarms", alarmDtos.Count);
 
-                return Ok(new
-                {
-                    success = true,
-                    count = alarms.Count,
-                    data = alarms
-                });
+                return Ok(ApiResponseDto<List<AlarmResponseDto>>.SuccessResult(
+                    alarmDtos,
+                    alarmDtos.Count,
+                    $"Retrieved {alarmDtos.Count} alarms successfully"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid arguments provided for alarm query");
+                return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving alarms");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving alarms" });
+                return StatusCode(500, ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving alarms"));
             }
         }
 
@@ -99,35 +83,48 @@ namespace GasFireMonitoringServer.Controllers
         /// <param name="limit">Maximum number of records to return (default 50)</param>
         /// <returns>List of alarms for the site</returns>
         [HttpGet("site/{siteId}")]
-        public async Task<IActionResult> GetAlarmsBySite(int siteId, [FromQuery] int limit = 50)
+        public async Task<ActionResult<ApiResponseDto<List<AlarmResponseDto>>>> GetAlarmsBySite(
+            int siteId,
+            [FromQuery] int limit = 50)
         {
             try
             {
-                var alarms = await _context.Alarms
-                    .Where(a => a.SiteId == siteId)
-                    .OrderByDescending(a => a.Timestamp)
-                    .Take(limit)
-                    .Select(a => new
-                    {
-                        a.Id,
-                        a.SensorTag,
-                        a.AlarmMessage,
-                        a.Timestamp
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Getting alarms for site {SiteId}, limit {Limit}", siteId, limit);
 
-                return Ok(new
+                if (siteId <= 0)
                 {
-                    success = true,
-                    siteId = siteId,
-                    count = alarms.Count,
-                    data = alarms
-                });
+                    return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                        "Site ID must be greater than 0"));
+                }
+
+                if (limit <= 0 || limit > 1000)
+                {
+                    return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                        "Limit must be between 1 and 1000"));
+                }
+
+                var alarms = await _alarmService.GetAlarmsBySiteAsync(siteId, limit);
+
+                // Convert entities to DTOs
+                var alarmDtos = alarms.Select(ConvertToAlarmResponseDto).ToList();
+
+                _logger.LogInformation("Retrieved {Count} alarms for site {SiteId}", alarmDtos.Count, siteId);
+
+                return Ok(ApiResponseDto<List<AlarmResponseDto>>.SuccessResult(
+                    alarmDtos,
+                    alarmDtos.Count,
+                    $"Retrieved {alarmDtos.Count} alarms for site {siteId}"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid site ID: {SiteId}", siteId);
+                return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving alarms for site {siteId}");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving alarms" });
+                _logger.LogError(ex, "Error retrieving alarms for site {SiteId}", siteId);
+                return StatusCode(500, ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving alarms"));
             }
         }
 
@@ -135,200 +132,253 @@ namespace GasFireMonitoringServer.Controllers
         /// Get alarm statistics
         /// </summary>
         /// <param name="siteId">Optional site ID filter</param>
-        /// <param name="days">Number of days to include (default 7)</param>
-        /// <returns>Alarm statistics</returns>
+        /// <returns>Alarm statistics with trends and analysis</returns>
         [HttpGet("stats")]
-        public async Task<IActionResult> GetAlarmStatistics([FromQuery] int? siteId = null, [FromQuery] int days = 7)
+        public async Task<ActionResult<ApiResponseDto<AlarmStats>>> GetAlarmStatistics([FromQuery] int? siteId = null)
         {
             try
             {
-                var startDate = DateTime.UtcNow.AddDays(-days);
-                var query = _context.Alarms.Where(a => a.Timestamp >= startDate);
+                _logger.LogInformation("Getting alarm statistics for site: {SiteId}", siteId?.ToString() ?? "All");
 
-                if (siteId.HasValue)
-                {
-                    query = query.Where(a => a.SiteId == siteId.Value);
-                }
+                var statistics = await _alarmService.GetAlarmStatsAsync(siteId);
 
-                var alarms = await query.ToListAsync();
+                _logger.LogInformation("Retrieved alarm statistics successfully");
 
-                var stats = new
-                {
-                    totalAlarms = alarms.Count,
-                    alarmsBySite = alarms.GroupBy(a => new { a.SiteId, a.SiteName })
-                        .Select(g => new
-                        {
-                            siteId = g.Key.SiteId,
-                            siteName = g.Key.SiteName,
-                            count = g.Count()
-                        })
-                        .OrderByDescending(x => x.count)
-                        .ToList(),
-                    alarmsByDay = alarms.GroupBy(a => a.Timestamp.Date)
-                        .Select(g => new
-                        {
-                            date = g.Key.ToString("yyyy-MM-dd"),
-                            count = g.Count()
-                        })
-                        .OrderBy(x => x.date)
-                        .ToList(),
-                    topSensors = alarms.GroupBy(a => a.SensorTag)
-                        .Select(g => new
-                        {
-                            sensorTag = g.Key,
-                            count = g.Count()
-                        })
-                        .OrderByDescending(x => x.count)
-                        .Take(10)
-                        .ToList()
-                };
-
-                return Ok(new
-                {
-                    success = true,
-                    periodDays = days,
-                    startDate = startDate,
-                    data = stats
-                });
+                return Ok(ApiResponseDto<AlarmStats>.SuccessResult(
+                    statistics,
+                    "Retrieved alarm statistics successfully"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid site ID for statistics: {SiteId}", siteId);
+                return BadRequest(ApiResponseDto<AlarmStats>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving alarm statistics");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving statistics" });
+                return StatusCode(500, ApiResponseDto<AlarmStats>.ErrorResult(
+                    "An error occurred while retrieving alarm statistics"));
             }
         }
 
         /// <summary>
-        /// Get active alarms (latest alarm for each sensor that hasn't returned to normal)
+        /// Get active alarms (currently in alarm state)
         /// </summary>
+        /// <param name="siteId">Optional site ID filter</param>
         /// <returns>List of active alarms</returns>
         [HttpGet("active")]
-        public async Task<IActionResult> GetActiveAlarms()
+        public async Task<ActionResult<ApiResponseDto<List<AlarmResponseDto>>>> GetActiveAlarms([FromQuery] int? siteId = null)
         {
             try
             {
-                // Get sensors that are currently in alarm state
-                var alarmedSensors = await _context.Sensors
-                    .Where(s => s.Status > 0)
-                    .ToListAsync();
+                _logger.LogInformation("Getting active alarms for site: {SiteId}", siteId?.ToString() ?? "All");
 
-                // Get the latest alarm for each alarmed sensor
-                var activeAlarms = new List<object>();
+                var alarms = await _alarmService.GetActiveAlarmsAsync(siteId);
 
-                foreach (var sensor in alarmedSensors)
-                {
-                    var latestAlarm = await _context.Alarms
-                        .Where(a => a.SiteId == sensor.SiteId && a.SensorTag == sensor.TagName)
-                        .OrderByDescending(a => a.Timestamp)
-                        .FirstOrDefaultAsync();
+                // Convert entities to DTOs
+                var alarmDtos = alarms.Select(ConvertToAlarmResponseDto).ToList();
 
-                    if (latestAlarm != null)
-                    {
-                        activeAlarms.Add(new
-                        {
-                            sensorId = sensor.Id,
-                            sensor.SiteId,
-                            sensor.SiteName,
-                            sensor.TagName,
-                            sensor.ChannelId,
-                            currentStatus = sensor.Status,
-                            currentStatusText = sensor.StatusText,
-                            currentValue = sensor.ProcessValue,
-                            sensor.Units,
-                            alarmId = latestAlarm.Id,
-                            alarmMessage = latestAlarm.AlarmMessage,
-                            alarmTimestamp = latestAlarm.Timestamp,
-                            sensor.LastUpdated
-                        });
-                    }
-                }
+                _logger.LogInformation("Retrieved {Count} active alarms", alarmDtos.Count);
 
-                return Ok(new
-                {
-                    success = true,
-                    count = activeAlarms.Count,
-                    data = activeAlarms.OrderBy(a => ((dynamic)a).SiteId).ThenBy(a => ((dynamic)a).TagName)
-                });
+                return Ok(ApiResponseDto<List<AlarmResponseDto>>.SuccessResult(
+                    alarmDtos,
+                    alarmDtos.Count,
+                    $"Retrieved {alarmDtos.Count} active alarms"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid site ID for active alarms: {SiteId}", siteId);
+                return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving active alarms");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving active alarms" });
+                return StatusCode(500, ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving active alarms"));
             }
         }
 
         /// <summary>
         /// Get alarm history for a specific sensor
         /// </summary>
-        /// <param name="sensorTag">Sensor tag name</param>
-        /// <param name="limit">Maximum number of records (default 50)</param>
+        /// <param name="sensorTag">Sensor tag</param>
+        /// <param name="days">Number of days to look back (default 7)</param>
         /// <returns>List of alarms for the sensor</returns>
         [HttpGet("sensor/{sensorTag}")]
-        public async Task<IActionResult> GetAlarmsBySensor(string sensorTag, [FromQuery] int limit = 50)
+        public async Task<ActionResult<ApiResponseDto<List<AlarmResponseDto>>>> GetAlarmsBySensor(
+            string sensorTag,
+            [FromQuery] int days = 7)
         {
             try
             {
-                var alarms = await _context.Alarms
-                    .Where(a => a.SensorTag == sensorTag)
-                    .OrderByDescending(a => a.Timestamp)
-                    .Take(limit)
-                    .Select(a => new
-                    {
-                        a.Id,
-                        a.SiteId,
-                        a.SiteName,
-                        a.AlarmMessage,
-                        a.Timestamp
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Getting alarms for sensor {SensorTag} for last {Days} days", sensorTag, days);
 
-                return Ok(new
+                if (string.IsNullOrWhiteSpace(sensorTag))
                 {
-                    success = true,
-                    sensorTag = sensorTag,
-                    count = alarms.Count,
-                    data = alarms
-                });
+                    return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                        "Sensor tag cannot be empty"));
+                }
+
+                if (days <= 0 || days > 365)
+                {
+                    return BadRequest(ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                        "Days must be between 1 and 365"));
+                }
+
+                var alarms = await _alarmService.GetSensorAlarmHistoryAsync(sensorTag, days);
+
+                // Convert entities to DTOs
+                var alarmDtos = alarms.Select(ConvertToAlarmResponseDto).ToList();
+
+                _logger.LogInformation("Retrieved {Count} alarms for sensor {SensorTag}", alarmDtos.Count, sensorTag);
+
+                return Ok(ApiResponseDto<List<AlarmResponseDto>>.SuccessResult(
+                    alarmDtos,
+                    alarmDtos.Count,
+                    $"Retrieved {alarmDtos.Count} alarms for sensor {sensorTag}"));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving alarms for sensor {sensorTag}");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving alarms" });
+                _logger.LogError(ex, "Error retrieving alarms for sensor {SensorTag}", sensorTag);
+                return StatusCode(500, ApiResponseDto<List<AlarmResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving sensor alarms"));
             }
         }
 
         /// <summary>
-        /// Delete old alarms (cleanup)
+        /// Get alarm trends for dashboard analytics
         /// </summary>
-        /// <param name="daysToKeep">Number of days of history to keep (default 30)</param>
-        /// <returns>Number of alarms deleted</returns>
-        [HttpDelete("cleanup")]
-        public async Task<IActionResult> CleanupOldAlarms([FromQuery] int daysToKeep = 30)
+        /// <param name="siteId">Optional site ID filter</param>
+        /// <param name="days">Number of days to analyze (default 7)</param>
+        /// <returns>Daily alarm count trends</returns>
+        [HttpGet("trends")]
+        public async Task<ActionResult<ApiResponseDto<Dictionary<DateTime, int>>>> GetAlarmTrends(
+            [FromQuery] int? siteId = null,
+            [FromQuery] int days = 7)
         {
             try
             {
-                var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
-                var alarmsToDelete = await _context.Alarms
-                    .Where(a => a.Timestamp < cutoffDate)
-                    .ToListAsync();
+                _logger.LogInformation("Getting alarm trends for site: {SiteId}, days: {Days}",
+                    siteId?.ToString() ?? "All", days);
 
-                _context.Alarms.RemoveRange(alarmsToDelete);
-                await _context.SaveChangesAsync();
-
-                _logger.LogInformation($"Deleted {alarmsToDelete.Count} alarms older than {cutoffDate}");
-
-                return Ok(new
+                if (days <= 0 || days > 365)
                 {
-                    success = true,
-                    deletedCount = alarmsToDelete.Count,
-                    cutoffDate = cutoffDate
-                });
+                    return BadRequest(ApiResponseDto<Dictionary<DateTime, int>>.ErrorResult(
+                        "Days must be between 1 and 365"));
+                }
+
+                var trends = await _alarmService.GetAlarmTrendsAsync(siteId, days);
+
+                _logger.LogInformation("Retrieved alarm trends for {Days} days", days);
+
+                return Ok(ApiResponseDto<Dictionary<DateTime, int>>.SuccessResult(
+                    trends,
+                    trends.Count,
+                    $"Retrieved alarm trends for {days} days"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid parameters for alarm trends");
+                return BadRequest(ApiResponseDto<Dictionary<DateTime, int>>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error cleaning up old alarms");
-                return StatusCode(500, new { success = false, message = "An error occurred while cleaning up alarms" });
+                _logger.LogError(ex, "Error retrieving alarm trends");
+                return StatusCode(500, ApiResponseDto<Dictionary<DateTime, int>>.ErrorResult(
+                    "An error occurred while retrieving alarm trends"));
             }
         }
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Convert AlarmFilterRequestDto to service AlarmFilter
+        /// </summary>
+        private static AlarmFilter ConvertToServiceFilter(AlarmFilterRequestDto? dto)
+        {
+            if (dto == null)
+                return new AlarmFilter();
+
+            return new AlarmFilter
+            {
+                SiteId = dto.SiteId,
+                StartDate = dto.StartDate,
+                EndDate = dto.EndDate,
+                SensorTag = dto.SensorTag,
+                Limit = dto.MaxResults,
+                ActiveOnly = dto.ActiveOnly
+            };
+        }
+
+        /// <summary>
+        /// Convert Alarm entity to AlarmResponseDto
+        /// </summary>
+        private static AlarmResponseDto ConvertToAlarmResponseDto(Alarm alarm)
+        {
+            // Extract alarm level and type from alarm message
+            var (alarmTypeName, alarmLevel) = ParseAlarmMessage(alarm.AlarmMessage);
+
+            return new AlarmResponseDto
+            {
+                Id = alarm.Id,
+                SiteId = alarm.SiteId,
+                SiteName = alarm.SiteName,
+                SensorTag = alarm.SensorTag,
+                ChannelId = ExtractChannelFromTag(alarm.SensorTag), // Extract channel from sensor tag
+                AlarmTypeName = alarmTypeName,
+                AlarmLevel = alarmLevel,
+                Value = 0.0, // Value not stored in alarm entity - could be extracted from sensor data if needed
+                Units = "", // Units not stored in alarm entity
+                Timestamp = alarm.Timestamp,
+                RawMessage = alarm.RawMessage
+            };
+        }
+
+        /// <summary>
+        /// Parse alarm message to extract type and level
+        /// </summary>
+        private static (string typeName, int level) ParseAlarmMessage(string alarmMessage)
+        {
+            if (string.IsNullOrEmpty(alarmMessage))
+                return ("Unknown", 0);
+
+            // Extract level from messages like "Alarm Level 1", "Alarm Level 2"
+            if (alarmMessage.Contains("Level"))
+            {
+                var parts = alarmMessage.Split(' ');
+                for (int i = 0; i < parts.Length - 1; i++)
+                {
+                    if (parts[i].Equals("Level", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (int.TryParse(parts[i + 1], out int level))
+                        {
+                            return ("Gas Alarm", level);
+                        }
+                    }
+                }
+            }
+
+            // Handle other alarm types
+            return alarmMessage switch
+            {
+                var msg when msg.Contains("Detector Error") => ("Detector Error", 3),
+                var msg when msg.Contains("Detector Disabled") => ("Detector Disabled", 4),
+                var msg when msg.Contains("Line Open") => ("Line Open Fault", 5),
+                var msg when msg.Contains("Line Short") => ("Line Short Fault", 6),
+                _ => (alarmMessage, 1)
+            };
+        }
+
+        /// <summary>
+        /// Extract channel ID from sensor tag (e.g., "KGD-002" -> "CH41")
+        /// </summary>
+        private static string ExtractChannelFromTag(string sensorTag)
+        {
+            // This is a simple implementation - you might need to adjust based on your tag naming convention
+            // For now, return empty string as channel mapping would require sensor data lookup
+            return "";
+        }
+
+        #endregion
     }
 }

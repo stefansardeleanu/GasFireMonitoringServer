@@ -1,11 +1,11 @@
 ﻿// File: Controllers/SiteController.cs
-// REST API controller for site information
+// REST API controller for site information - REFACTORED to use service layer
 
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using GasFireMonitoringServer.Data;
-using System.Linq;
-using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
+using GasFireMonitoringServer.Services.Business.Interfaces;
+using GasFireMonitoringServer.Models.DTOs.Common;
+using GasFireMonitoringServer.Models.DTOs.Responses;
 
 namespace GasFireMonitoringServer.Controllers
 {
@@ -14,29 +14,20 @@ namespace GasFireMonitoringServer.Controllers
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    // [Authorize] // All endpoints require authentication
     public class SiteController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ISiteService _siteService;
+        private readonly IConfigurationService _configurationService;
         private readonly ILogger<SiteController> _logger;
 
-        // Site information (hardcoded for now, could be moved to database)
-        private readonly List<SiteInfo> _sites = new()
+        public SiteController(
+            ISiteService siteService,
+            IConfigurationService configurationService,
+            ILogger<SiteController> logger)
         {
-            new SiteInfo { Id = 1, Name = "SondaMorEni", County = "Prahova", Latitude = 40, Longitude = 10 },
-            new SiteInfo { Id = 2, Name = "SondaArb", County = "Prahova", Latitude = 40, Longitude = 20 },
-            new SiteInfo { Id = 3, Name = "SondaBerPH01", County = "Prahova", Latitude = 40, Longitude = 30 },
-            new SiteInfo { Id = 4, Name = "ParcMorMic", County = "Prahova", Latitude = 40, Longitude = 40 },
-            new SiteInfo { Id = 5, Name = "PanouHurezani", County = "Gorj", Latitude = 55, Longitude = 75 },
-            new SiteInfo { Id = 6, Name = "TUCOBulbuceni", County = "Gorj", Latitude = 65, Longitude = 65 },
-            new SiteInfo { Id = 7, Name = "ParcBatrani", County = "Prahova", Latitude = 40, Longitude = 50 },
-            new SiteInfo { Id = 8, Name = "ParcCartojani", County = "Prahova", Latitude = 40, Longitude = 60 },
-            new SiteInfo { Id = 9, Name = "ParcTintea", County = "Prahova", Latitude = 40, Longitude = 70 },
-            new SiteInfo { Id = 10, Name = "StatieLucacesti", County = "Prahova", Latitude = 40, Longitude = 807 }
-        };
-
-        public SiteController(ApplicationDbContext context, ILogger<SiteController> logger)
-        {
-            _context = context;
+            _siteService = siteService;
+            _configurationService = configurationService;
             _logger = logger;
         }
 
@@ -45,112 +36,75 @@ namespace GasFireMonitoringServer.Controllers
         /// </summary>
         /// <returns>List of all sites with sensor counts and alarm status</returns>
         [HttpGet]
-        public async Task<IActionResult> GetAllSites()
+        public async Task<ActionResult<ApiResponseDto<List<SiteResponseDto>>>> GetAllSites()
         {
             try
             {
-                // Get sensor data from database
-                var sensorData = await _context.Sensors
-                    .GroupBy(s => s.SiteId)
-                    .Select(g => new
-                    {
-                        SiteId = g.Key,
-                        TotalSensors = g.Count(),
-                        NormalSensors = g.Count(s => s.Status == 0),
-                        AlarmSensors = g.Count(s => s.Status > 0 && s.Status <= 2),
-                        ErrorSensors = g.Count(s => s.Status > 2),
-                        LastUpdate = g.Max(s => s.LastUpdated)
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Getting all sites with status information");
 
-                // Combine with site information
-                var sites = _sites.Select(site =>
-                {
-                    var data = sensorData.FirstOrDefault(d => d.SiteId == site.Id);
-                    return new
-                    {
-                        site.Id,
-                        site.Name,
-                        site.County,
-                        site.Latitude,
-                        site.Longitude,
-                        status = GetSiteStatus(data),
-                        totalSensors = data?.TotalSensors ?? 0,
-                        normalSensors = data?.NormalSensors ?? 0,
-                        alarmSensors = data?.AlarmSensors ?? 0,
-                        errorSensors = data?.ErrorSensors ?? 0,
-                        lastUpdate = data?.LastUpdate ?? DateTime.MinValue
-                    };
-                }).OrderBy(s => s.County).ThenBy(s => s.Name).ToList();
+                var sitesWithStatus = await _siteService.GetAllSitesAsync();
 
-                return Ok(new
-                {
-                    success = true,
-                    count = sites.Count,
-                    data = sites
-                });
+                // Convert to DTOs
+                var siteDtos = sitesWithStatus.Select(ConvertToSiteResponseDto).ToList();
+
+                _logger.LogInformation("Retrieved {Count} sites with status", siteDtos.Count);
+
+                return Ok(ApiResponseDto<List<SiteResponseDto>>.SuccessResult(
+                    siteDtos,
+                    siteDtos.Count,
+                    $"Retrieved {siteDtos.Count} sites successfully"));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving sites");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving sites" });
+                _logger.LogError(ex, "Error retrieving all sites");
+                return StatusCode(500, ApiResponseDto<List<SiteResponseDto>>.ErrorResult(
+                    "An error occurred while retrieving sites"));
             }
         }
 
         /// <summary>
         /// Get sites grouped by county
         /// </summary>
-        /// <returns>Sites grouped by county with status</returns>
+        /// <returns>Sites organized by county with aggregated statistics</returns>
         [HttpGet("by-county")]
-        public async Task<IActionResult> GetSitesByCounty()
+        public async Task<ActionResult<ApiResponseDto<object>>> GetSitesByCounty()
         {
             try
             {
-                // Get sensor data
-                var sensorData = await _context.Sensors
-                    .GroupBy(s => s.SiteId)
-                    .Select(g => new
-                    {
-                        SiteId = g.Key,
-                        HasAlarms = g.Any(s => s.Status > 0 && s.Status <= 2),
-                        HasErrors = g.Any(s => s.Status > 2)
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Getting sites grouped by county");
 
-                // Group sites by county
-                var counties = _sites.GroupBy(s => s.County)
-                    .Select(county => new
-                    {
-                        county = county.Key,
-                        siteCount = county.Count(),
-                        sites = county.Select(site =>
-                        {
-                            var data = sensorData.FirstOrDefault(d => d.SiteId == site.Id);
-                            return new
-                            {
-                                site.Id,
-                                site.Name,
-                                site.Latitude,
-                                site.Longitude,
-                                hasAlarms = data?.HasAlarms ?? false,
-                                hasErrors = data?.HasErrors ?? false
-                            };
-                        }).OrderBy(s => s.Name).ToList()
-                    })
-                    .OrderBy(c => c.county)
-                    .ToList();
+                var countyGroups = await _siteService.GetSitesByCountyAsync();
 
-                return Ok(new
+                // Convert CountyGroup to response format using ACTUAL properties
+                var response = countyGroups.Select(county => new
                 {
-                    success = true,
-                    countyCount = counties.Count,
-                    data = counties
-                });
+                    county = county.CountyName, // CORRECT property name
+                    totalSites = county.TotalSites,
+                    onlineSites = county.OnlineSites,
+                    offlineSites = county.OfflineSites,
+                    statusBreakdown = new
+                    {
+                        normalCount = county.StatusBreakdown.NormalCount,
+                        alarmCount = county.StatusBreakdown.AlarmCount,
+                        faultCount = county.StatusBreakdown.FaultCount,
+                        disabledCount = county.StatusBreakdown.DisabledCount,
+                        offlineCount = county.StatusBreakdown.OfflineCount
+                    },
+                    sites = county.Sites.Select(ConvertToSiteResponseDto).ToList()
+                }).ToList();
+
+                _logger.LogInformation("Retrieved sites for {CountyCount} counties", response.Count);
+
+                return Ok(ApiResponseDto<object>.SuccessResult(
+                    response,
+                    response.Count,
+                    $"Retrieved sites for {response.Count} counties"));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving sites by county");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving sites" });
+                return StatusCode(500, ApiResponseDto<object>.ErrorResult(
+                    "An error occurred while retrieving sites by county"));
             }
         }
 
@@ -158,187 +112,154 @@ namespace GasFireMonitoringServer.Controllers
         /// Get detailed information for a specific site
         /// </summary>
         /// <param name="id">Site ID</param>
-        /// <returns>Detailed site information including sensors</returns>
+        /// <returns>Detailed site information including sensors and alarms</returns>
         [HttpGet("{id}")]
-        public async Task<IActionResult> GetSite(int id)
+        public async Task<ActionResult<ApiResponseDto<object>>> GetSite(int id)
         {
             try
             {
-                var site = _sites.FirstOrDefault(s => s.Id == id);
-                if (site == null)
+                _logger.LogInformation("Getting detailed information for site {SiteId}", id);
+
+                if (id <= 0)
                 {
-                    return NotFound(new { success = false, message = "Site not found" });
+                    return BadRequest(ApiResponseDto<object>.ErrorResult(
+                        "Site ID must be greater than 0"));
                 }
 
-                // Get sensors for this site
-                var sensors = await _context.Sensors
-                    .Where(s => s.SiteId == id)
-                    .OrderBy(s => s.ChannelId)
-                    .Select(s => new
-                    {
-                        s.Id,
-                        s.ChannelId,
-                        s.TagName,
-                        s.DetectorType,
-                        s.ProcessValue,
-                        s.CurrentValue,
-                        s.Status,
-                        s.StatusText,
-                        s.Units,
-                        s.LastUpdated
-                    })
-                    .ToListAsync();
+                var siteDetail = await _siteService.GetSiteByIdAsync(id);
 
-                // Get recent alarms for this site
-                var recentAlarms = await _context.Alarms
-                    .Where(a => a.SiteId == id)
-                    .OrderByDescending(a => a.Timestamp)
-                    .Take(10)
-                    .Select(a => new
-                    {
-                        a.Id,
-                        a.SensorTag,
-                        a.AlarmMessage,
-                        a.Timestamp
-                    })
-                    .ToListAsync();
-
-                var siteDetails = new
+                if (siteDetail == null)
                 {
-                    site.Id,
-                    site.Name,
-                    site.County,
-                    site.Latitude,
-                    site.Longitude,
-                    status = GetSiteStatusFromSensors(sensors),
+                    _logger.LogWarning("Site {SiteId} not found", id);
+                    return NotFound(ApiResponseDto<object>.NotFoundResult(
+                        $"Site with ID {id} not found"));
+                }
+
+                // Convert SiteDetail to response format using ACTUAL properties
+                var response = new
+                {
+                    // Using SiteInfo nested object
+                    id = siteDetail.SiteInfo.Id,
+                    name = siteDetail.SiteInfo.Name,
+                    county = siteDetail.SiteInfo.County,
+                    latitude = siteDetail.SiteInfo.Latitude,
+                    longitude = siteDetail.SiteInfo.Longitude,
+                    status = siteDetail.Status,
+                    isOnline = siteDetail.IsOnline,
+                    lastUpdate = siteDetail.LastUpdate,
+
+                    // Using SensorStatistics nested object
                     statistics = new
                     {
-                        totalSensors = sensors.Count,
-                        normalSensors = sensors.Count(s => s.Status == 0),
-                        alarmSensors = sensors.Count(s => s.Status > 0 && s.Status <= 2),
-                        errorSensors = sensors.Count(s => s.Status > 2),
-                        sensorTypes = sensors.GroupBy(s => s.DetectorType)
-                            .Select(g => new
-                            {
-                                type = g.Key,
-                                typeName = GetDetectorTypeName(g.Key),
-                                count = g.Count()
-                            })
-                            .ToList()
+                        totalSensors = siteDetail.SensorStatistics.TotalSensors,
+                        normalSensors = siteDetail.SensorStatistics.NormalSensors,
+                        alarmSensors = siteDetail.SensorStatistics.AlarmSensors,
+                        faultSensors = siteDetail.SensorStatistics.FaultSensors,
+                        disabledSensors = siteDetail.SensorStatistics.DisabledSensors,
+                        onlineSensors = siteDetail.SensorStatistics.OnlineSensors,
+                        offlineSensors = siteDetail.SensorStatistics.OfflineSensors,
+                        sensorTypeBreakdown = siteDetail.SensorStatistics.SensorTypeBreakdown
                     },
-                    sensors = sensors,
-                    recentAlarms = recentAlarms
+
+                    // Recent alarms
+                    recentAlarms = siteDetail.RecentAlarms.Take(10).Select(alarm => new
+                    {
+                        alarm.Id,
+                        alarm.SensorTag,
+                        alarm.AlarmMessage,
+                        alarm.Timestamp
+                    })
                 };
 
-                return Ok(new
-                {
-                    success = true,
-                    data = siteDetails
-                });
+                _logger.LogInformation("Retrieved detailed information for site {SiteId}: {SiteName}",
+                    id, siteDetail.SiteInfo.Name);
+
+                return Ok(ApiResponseDto<object>.SuccessResult(
+                    response,
+                    $"Retrieved detailed information for site {siteDetail.SiteInfo.Name}"));
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid site ID: {SiteId}", id);
+                return BadRequest(ApiResponseDto<object>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving site {id}");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving site details" });
+                _logger.LogError(ex, "Error retrieving site {SiteId}", id);
+                return StatusCode(500, ApiResponseDto<object>.ErrorResult(
+                    "An error occurred while retrieving site information"));
             }
         }
 
         /// <summary>
-        /// Get site status summary
+        /// Get overall system status summary
         /// </summary>
-        /// <returns>Summary of all sites status</returns>
+        /// <returns>System-wide status and health metrics</returns>
         [HttpGet("status-summary")]
-        public async Task<IActionResult> GetStatusSummary()
+        public async Task<ActionResult<ApiResponseDto<object>>> GetStatusSummary()
         {
             try
             {
-                var sensorData = await _context.Sensors
-                    .GroupBy(s => s.SiteId)
-                    .Select(g => new
-                    {
-                        SiteId = g.Key,
-                        HasAlarms = g.Any(s => s.Status > 0 && s.Status <= 2),
-                        HasErrors = g.Any(s => s.Status > 2),
-                        IsOffline = g.All(s => s.LastUpdated < DateTime.UtcNow.AddMinutes(-30))
-                    })
-                    .ToListAsync();
+                _logger.LogInformation("Getting system status summary");
 
-                var summary = new
+                var statusSummary = await _siteService.GetStatusSummaryAsync();
+
+                // Convert StatusSummary using ACTUAL properties
+                var response = new
                 {
-                    totalSites = _sites.Count,
-                    sitesNormal = sensorData.Count(s => !s.HasAlarms && !s.HasErrors && !s.IsOffline),
-                    sitesWithAlarms = sensorData.Count(s => s.HasAlarms),
-                    sitesWithErrors = sensorData.Count(s => s.HasErrors),
-                    sitesOffline = sensorData.Count(s => s.IsOffline),
-                    timestamp = DateTime.UtcNow
+                    totalSites = statusSummary.TotalSites,
+                    activeSites = statusSummary.ActiveSites,
+                    offlineSites = statusSummary.OfflineSites,
+                    sitesWithAlarms = statusSummary.SitesWithAlarms,
+                    sitesWithFaults = statusSummary.SitesWithFaults,
+                    sitesDisabled = statusSummary.SitesDisabled,
+                    totalSensors = statusSummary.TotalSensors,
+                    sensorsInAlarm = statusSummary.SensorsInAlarm,
+                    sensorsWithFaults = statusSummary.SensorsWithFaults,
+                    sensorsDisabled = statusSummary.SensorsDisabled,
+                    lastSystemUpdate = statusSummary.LastSystemUpdate,
+                    systemHealthPercentage = statusSummary.SystemHealthPercentage
                 };
 
-                return Ok(new
-                {
-                    success = true,
-                    data = summary
-                });
+                _logger.LogInformation("Retrieved system status summary");
+
+                return Ok(ApiResponseDto<object>.SuccessResult(
+                    response,
+                    "Retrieved system status summary successfully"));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving status summary");
-                return StatusCode(500, new { success = false, message = "An error occurred while retrieving status summary" });
+                _logger.LogError(ex, "Error retrieving system status summary");
+                return StatusCode(500, ApiResponseDto<object>.ErrorResult(
+                    "An error occurred while retrieving system status"));
             }
         }
 
-        // Helper methods
-        private string GetSiteStatus(dynamic data)
+        #region Helper Methods
+
+        /// <summary>
+        /// Convert SiteWithStatus to SiteResponseDto using ACTUAL properties
+        /// </summary>
+        private static SiteResponseDto ConvertToSiteResponseDto(SiteWithStatus siteWithStatus)
         {
-            if (data == null) return "offline";
-            if (data.AlarmSensors > 0) return "alarm";
-            if (data.ErrorSensors > 0) return "error";
-            if (data.LastUpdate < DateTime.UtcNow.AddMinutes(-30)) return "offline";
-            return "normal";
-        }
-
-        private string GetSiteStatusFromSensors(dynamic sensors)
-        {
-            if (sensors == null || sensors.Count == 0) return "offline";
-
-            // Check for alarms (status 1 or 2)
-            bool hasAlarms = false;
-            bool hasErrors = false;
-            DateTime? lastUpdate = null;
-
-            foreach (var sensor in sensors)
+            return new SiteResponseDto
             {
-                if (sensor.Status > 0 && sensor.Status <= 2) hasAlarms = true;
-                if (sensor.Status > 2) hasErrors = true;
-                if (lastUpdate == null || sensor.LastUpdated > lastUpdate)
-                    lastUpdate = sensor.LastUpdated;
-            }
-
-            if (hasAlarms) return "alarm";
-            if (hasErrors) return "error";
-            if (lastUpdate.HasValue && lastUpdate.Value < DateTime.UtcNow.AddMinutes(-30)) return "offline";
-            return "normal";
-        }
-
-        private string GetDetectorTypeName(int type)
-        {
-            return type switch
-            {
-                1 => "Gas",
-                2 => "Flame",
-                3 => "Manual Call",
-                4 => "Smoke",
-                _ => "Unknown"
+                Id = siteWithStatus.Id,
+                Name = siteWithStatus.Name,
+                County = siteWithStatus.County,
+                Latitude = siteWithStatus.Latitude,
+                Longitude = siteWithStatus.Longitude,
+                Status = siteWithStatus.OverallStatus, // CORRECT property name
+                TotalSensors = siteWithStatus.TotalSensors,
+                NormalSensors = siteWithStatus.StatusBreakdown.NormalCount,
+                AlarmSensors = siteWithStatus.StatusBreakdown.AlarmCount,
+                ErrorSensors = siteWithStatus.StatusBreakdown.FaultCount, // Mapping FaultCount to ErrorSensors
+                LastUpdate = siteWithStatus.LastUpdate ?? DateTime.MinValue, // Handle nullable DateTime
+                HasCustomLayout = false, // This would need to come from configuration service
+                LayoutMode = "grid" // Default value, would need configuration service lookup
             };
         }
 
-        // Inner class for site information
-        private class SiteInfo
-        {
-            public int Id { get; set; }
-            public string Name { get; set; } = "";
-            public string County { get; set; } = "";
-            public double Latitude { get; set; }
-            public double Longitude { get; set; }
-        }
+        #endregion
     }
 }

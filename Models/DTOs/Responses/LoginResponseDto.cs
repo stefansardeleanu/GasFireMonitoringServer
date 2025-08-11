@@ -1,7 +1,7 @@
 ﻿// File: Models/DTOs/LoginResponse.cs
-namespace GasFireMonitoringServer.Models.DTOs
+namespace GasFireMonitoringServer.Models.DTOs.Responses
 {
-    public class LoginResponse
+    public class LoginResponseDto
     {
         public bool Success { get; set; }
         public string Message { get; set; } = "";
