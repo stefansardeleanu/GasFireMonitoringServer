@@ -33,7 +33,6 @@ namespace GasFireMonitoringServer.Services.Business
         {
             PropertyNameCaseInsensitive = true,
             WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
         public ConfigurationService(ILogger<ConfigurationService> logger)

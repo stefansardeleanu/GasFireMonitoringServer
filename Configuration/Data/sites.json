@@ -157,21 +157,22 @@
       "spacing": 10.0,
       "groupByType": true,
       "showLabels": true
-    },
-    {
-      "id": 12,
-      "name": "StatieBratila",
-      "county": "Prahova",
-      "mapX": 41.2,
-      "mapY": 68.5,
-      "layoutMode": "auto",
-      "layoutFile": "site_12_layout.svg",
-      "gridConfig": {
-        "columns": 0,
-        "style": "square",
-        "spacing": 10.0,
-        "groupByType": true,
-        "showLabels": true
-      }
     }
+  },
+  {
+    "id": 12,
+    "name": "StatieBratila",
+    "county": "Prahova",
+    "mapX": 41.2,
+    "mapY": 68.5,
+    "layoutMode": "auto",
+    "layoutFile": "site_12_layout.svg",
+    "gridConfig": {
+      "columns": 0,
+      "style": "square",
+      "spacing": 10.0,
+      "groupByType": true,
+      "showLabels": true
+    }
+  }
 ]
