@@ -446,7 +446,7 @@ namespace GasFireMonitoringServer.Controllers
             try
             {
                 var paths = _configurationService.GetConfigurationPaths();
-
+                
                 return Ok(new
                 {
                     Paths = new

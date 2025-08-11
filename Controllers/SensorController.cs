@@ -16,7 +16,7 @@ namespace GasFireMonitoringServer.Controllers
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize] // All endpoints require authentication
+    [Authorize] // All endpoints require authentication
     public class SensorController : ControllerBase
     {
         private readonly ISensorService _sensorService;

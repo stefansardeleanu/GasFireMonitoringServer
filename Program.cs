@@ -1,77 +1,187 @@
 ﻿// File: Program.cs
-// This is the entry point of your application - like the MAIN block in PLC
+// Main application entry point
+// UPDATED: Added JWT authentication configuration
 
-using GasFireMonitoringServer.Configuration;
 using GasFireMonitoringServer.Data;
 using GasFireMonitoringServer.Hubs;
-using GasFireMonitoringServer.Services;
-using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
-using GasFireMonitoringServer.Services.Business.Interfaces;
-using GasFireMonitoringServer.Services.Business;
-using GasFireMonitoringServer.Repositories.Interfaces;
+using GasFireMonitoringServer.Models.DTOs.Common;
 using GasFireMonitoringServer.Repositories;
-using Microsoft.AspNetCore.Builder;
+using GasFireMonitoringServer.Repositories.Interfaces;
+using GasFireMonitoringServer.Services;
+using GasFireMonitoringServer.Services.Business;
+using GasFireMonitoringServer.Services.Business.Interfaces;
+using GasFireMonitoringServer.Services.Infrastructure;
+using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container (Dependency Injection setup)
-// This is like declaring which function blocks are available in your PLC
+// Add services to the container.
 
-// Add controllers for REST API
+// Configure JWT settings from appsettings.json
+builder.Services.Configure<JwtSettingsDto>(
+    builder.Configuration.GetSection("JwtSettings"));
+
+var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettingsDto>();
+if (jwtSettings == null)
+{
+    throw new InvalidOperationException("JWT settings not found in configuration");
+}
+
+// Validate JWT settings
+var validationErrors = jwtSettings.Validate();
+if (validationErrors.Any())
+{
+    throw new InvalidOperationException($"Invalid JWT settings: {string.Join(", ", validationErrors)}");
+}
+
+// Add authentication services
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = false; // Set to true in production with HTTPS
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = jwtSettings.ValidateIssuer,
+        ValidateAudience = jwtSettings.ValidateAudience,
+        ValidateLifetime = jwtSettings.ValidateLifetime,
+        ValidateIssuerSigningKey = jwtSettings.ValidateIssuerSigningKey,
+        ValidIssuer = jwtSettings.Issuer,
+        ValidAudience = jwtSettings.Audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
+        ClockSkew = jwtSettings.ClockSkew
+    };
+
+    // Configure JWT for SignalR
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            // Allow JWT token from query string for SignalR connections
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/monitoringHub"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
+});
+
+// Add authorization services
+builder.Services.AddAuthorization(options =>
+{
+    // Define authorization policies
+    options.AddPolicy("CEOOnly", policy => policy.RequireRole("CEO"));
+    options.AddPolicy("RegionalOrAbove", policy => policy.RequireRole("CEO", "Regional"));
+    options.AddPolicy("AllRoles", policy => policy.RequireRole("CEO", "Regional", "Operator"));
+
+    // Custom policies for permissions
+    options.AddPolicy("CanManageConfiguration", policy =>
+        policy.RequireAssertion(context =>
+            context.User.HasClaim("permission", "ManageConfiguration") ||
+            context.User.IsInRole("CEO")));
+
+    options.AddPolicy("CanManageUsers", policy =>
+        policy.RequireAssertion(context =>
+            context.User.HasClaim("permission", "ManageUsers") ||
+            context.User.IsInRole("CEO")));
+
+    options.AddPolicy("CanViewReports", policy =>
+        policy.RequireAssertion(context =>
+            context.User.HasClaim("permission", "ViewReports") ||
+            (context.User.IsInRole("CEO") || context.User.IsInRole("Regional"))));
+});
+
+// Add controllers and API documentation
 builder.Services.AddControllers();
-
-// Add Swagger for API documentation
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "Gas Fire Monitoring Server API",
+        Version = "v1",
+        Description = "Professional API for gas and fire monitoring system with JWT authentication"
+    });
+
+    // Configure Swagger to use JWT
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token in the text input below.",
+        Name = "Authorization",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer",
+        BearerFormat = "JWT"
+    });
+
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// Add CORS policy for client applications
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAllOrigins", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+// Configure database connection
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))
+    ));
 
 // Add SignalR for real-time communication
 builder.Services.AddSignalR();
-
-// Configure CORS (Cross-Origin Resource Sharing) - allows clients to connect
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAllOrigins",
-        builder =>
-        {
-            builder.AllowAnyOrigin()
-                   .AllowAnyMethod()
-                   .AllowAnyHeader();
-        });
-});
-
-// Add database context - connection to MariaDB
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    var serverVersion = ServerVersion.Create(10, 5, 0, ServerType.MariaDb);
-    options.UseMySql(connectionString, serverVersion);
-});
-
-// Configure settings from appsettings.json
-builder.Services.Configure<MqttSettings>(
-    builder.Configuration.GetSection("MqttSettings"));
 
 // Register Repository Layer (Data Access)
 // Scoped = one instance per HTTP request
 builder.Services.AddScoped<ISensorRepository, SensorRepository>();
 builder.Services.AddScoped<IAlarmRepository, AlarmRepository>();
 builder.Services.AddScoped<ISiteRepository, SiteRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>(); // NEW: User repository
 
-// Register Business Service Layer (Domain Logic)
+// Register Business Service Layer (Domain Logic)  
 // Scoped = one instance per HTTP request
 builder.Services.AddScoped<ISensorService, SensorService>();
 builder.Services.AddScoped<IAlarmService, AlarmService>();
 builder.Services.AddScoped<ISiteService, SiteService>();
 builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 builder.Services.AddScoped<ILayoutService, LayoutService>();
+builder.Services.AddScoped<IAuthenticationService, AuthenticationService>(); // NEW: Authentication service
 
-// Register services (like declaring instances of function blocks)
-// Singleton = only one instance for entire application lifetime
+// Register Infrastructure Services (Singleton = one instance for entire application lifetime)
 builder.Services.AddSingleton<IMqttService, MqttService>();
 builder.Services.AddSingleton<DataProcessingService>();
 
@@ -106,12 +216,23 @@ catch (Exception ex)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Gas Fire Monitoring API v1");
+        options.RoutePrefix = "swagger";
+
+        // Add instructions for JWT authentication
+        options.DocumentTitle = "Gas Fire Monitoring API - Authentication Required";
+    });
 }
 
-// Add middleware in order
+// Add middleware in the correct order (IMPORTANT: Order matters!)
 app.UseCors("AllowAllOrigins");  // Enable CORS
-app.UseAuthorization();         // Add authorization
+
+// Authentication and Authorization middleware (NEW)
+app.UseAuthentication();  // Must come before UseAuthorization
+app.UseAuthorization();   // Must come after UseAuthentication
+
 app.MapControllers();           // Map API controllers
 app.MapHub<MonitoringHub>("/monitoringHub");  // Map SignalR hub
 
@@ -148,6 +269,7 @@ app.Lifetime.ApplicationStopping.Register(async () =>
 Console.WriteLine("🚀 Gas Fire Monitoring Server is running...");
 Console.WriteLine("📊 Swagger UI available at: http://localhost:5208/swagger");
 Console.WriteLine("🔌 SignalR Hub available at: http://localhost:5208/monitoringHub");
+Console.WriteLine("🔐 JWT Authentication enabled - Login required for protected endpoints");
 
 // Run the application
 app.Run();
