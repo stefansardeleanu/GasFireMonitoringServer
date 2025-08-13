@@ -18,9 +18,29 @@ namespace GasFireMonitoringServer.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
+            // Skip exception handling for Swagger resources to avoid false errors
+            if (context.Request.Path.StartsWithSegments("/swagger") ||
+                context.Request.Path.StartsWithSegments("/swagger-ui"))
+            {
+                await _next(context);
+                return;
+            }
+
             try
             {
                 await _next(context);
+            }
+            catch (TaskCanceledException)
+            {
+                // Client disconnected, don't log as error
+                _logger.LogDebug("Request was cancelled: {Method} {Path}",
+                    context.Request.Method, context.Request.Path);
+
+                // Don't send response if client disconnected
+                if (!context.Response.HasStarted)
+                {
+                    context.Response.StatusCode = 499; // Client Closed Request
+                }
             }
             catch (Exception ex)
             {
@@ -33,6 +53,12 @@ namespace GasFireMonitoringServer.Middleware
 
         private static async Task HandleExceptionAsync(HttpContext context, Exception ex)
         {
+            // Don't try to write response if it's already started
+            if (context.Response.HasStarted)
+            {
+                return;
+            }
+
             context.Response.ContentType = "application/json";
 
             var response = ex switch

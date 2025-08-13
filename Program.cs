@@ -1,87 +1,48 @@
 ﻿// File: Program.cs
-// Complete Program.cs without API versioning and rate limiting (keep it simple)
+// Complete Program.cs with enhanced Swagger documentation
 
 using FluentValidation.AspNetCore;
-using GasFireMonitoringServer.Configuration;
 using GasFireMonitoringServer.Data;
+using GasFireMonitoringServer.Filters; // For SwaggerFilters if you created them
 using GasFireMonitoringServer.Hubs;
-using GasFireMonitoringServer.Infrastructure;
 using GasFireMonitoringServer.Middleware;
 using GasFireMonitoringServer.Models.DTOs.Common;
+using GasFireMonitoringServer.Models.Entities;
 using GasFireMonitoringServer.Repositories;
 using GasFireMonitoringServer.Repositories.Interfaces;
-using GasFireMonitoringServer.Services;
 using GasFireMonitoringServer.Services.Business;
 using GasFireMonitoringServer.Services.Business.Interfaces;
-using GasFireMonitoringServer.Services.Infrastructure;
+using GasFireMonitoringServer.Configuration;
+using GasFireMonitoringServer.Services;
 using GasFireMonitoringServer.Services.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using Serilog;
+using Serilog.Context;
 using Serilog.Events;
 using System.Reflection;
 using System.Text;
+using System.Text.Json.Serialization;
 
-// Enhanced Serilog configuration with structured logging
+// Configure Serilog logging
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
-    .MinimumLevel.Override("System", LogEventLevel.Warning)
-    .MinimumLevel.Override("MQTTnet", LogEventLevel.Information)
-
-    // Enrich with structured data
     .Enrich.FromLogContext()
     .Enrich.WithCorrelationId()
-    .Enrich.WithProperty("Application", "GasFireMonitoringServer")
-    .Enrich.WithProperty("Environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development")
-    .Enrich.WithProperty("MachineName", Environment.MachineName)
-    .Enrich.WithProperty("ProcessId", Environment.ProcessId)
-
-    // Console output with enhanced template
-    .WriteTo.Console(outputTemplate:
-        "[{Timestamp:HH:mm:ss} {Level:u3}] [{CorrelationId}] {Message:lj} " +
-        "{Properties:j}{NewLine}{Exception}")
-
-    // File output with detailed logging
+    .WriteTo.Console(
+        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{CorrelationId}] [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.File(
         path: "logs/gasfiremonitoring-.log",
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 30,
-        fileSizeLimitBytes: 50_000_000,
+        fileSizeLimitBytes: 10_485_760, // 10MB
         rollOnFileSizeLimit: true,
-        shared: true,
-        outputTemplate:
-            "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] [{CorrelationId}] " +
-            "{SourceContext} {Message:lj} {Properties:j}{NewLine}{Exception}")
-
-    // Separate file for errors only
-    .WriteTo.File(
-        path: "logs/errors-.log",
-        restrictedToMinimumLevel: LogEventLevel.Warning,
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 90,
-        fileSizeLimitBytes: 10_000_000,
-        rollOnFileSizeLimit: true,
-        shared: true,
-        outputTemplate:
-            "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] [{CorrelationId}] " +
-            "{SourceContext} {Message:lj} {Properties:j}{NewLine}{Exception}")
-
-    // Performance logs
-    .WriteTo.Logger(lc => lc
-        .Filter.ByIncludingOnly(e => e.Properties.ContainsKey("Performance"))
-        .WriteTo.File(
-            path: "logs/performance-.log",
-            rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: 7,
-            outputTemplate:
-                "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {Message:lj} {Properties:j}{NewLine}"))
-
+        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {Message:lj} {Properties:j}{NewLine}")
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -160,6 +121,8 @@ builder.Services.AddAuthorization(options =>
 // Add controllers and API documentation
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
+// Enhanced Swagger configuration
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
@@ -167,25 +130,74 @@ builder.Services.AddSwaggerGen(options =>
         Title = "Gas Fire Monitoring Server API",
         Version = "v1.0",
         Description = @"
-            **Professional API for gas and fire monitoring system**
+            <h2>Professional Gas & Fire Monitoring System API</h2>
             
-            This API provides comprehensive monitoring capabilities for industrial gas and fire detection systems across multiple sites.
+            <p>This API provides comprehensive monitoring capabilities for industrial gas and fire detection systems across multiple sites.</p>
             
-            ### Features:
-            - **Real-time sensor monitoring** across 10+ industrial sites
-            - **JWT authentication** with role-based access control
-            - **Configuration management** for sites, sensors, and layouts
-            - **SVG layout management** with sensor positioning
-            - **SignalR real-time updates** for live monitoring
-            - **MQTT integration** for PLC data collection
+            <h3>🔑 Authentication</h3>
+            <p>All endpoints (except login) require JWT authentication. Use <code>/api/auth/login</code> to obtain a token, then include it in the Authorization header:</p>
+            <pre>Authorization: Bearer [your-token-here]</pre>
             
-            ### Authentication:
-            All endpoints require JWT authentication. Use the `/api/auth/login` endpoint to obtain a token.
+            <h3>📊 Key Features</h3>
+            <ul>
+                <li><strong>Real-time Monitoring:</strong> Live sensor data from industrial sites</li>
+                <li><strong>Multi-level Alarms:</strong> Level 1 (Warning) and Level 2 (Critical) alerts</li>
+                <li><strong>Geographic Organization:</strong> Sites grouped by counties</li>
+                <li><strong>Role-based Access:</strong> CEO, Regional, and Operator roles with site-level permissions</li>
+                <li><strong>SignalR Integration:</strong> Real-time updates via WebSocket connection</li>
+                <li><strong>SVG Layout Support:</strong> Custom site layouts with sensor positioning</li>
+                <li><strong>Dynamic Configuration:</strong> Site and sensor configurations managed through API</li>
+            </ul>
+            
+            <h3>🚨 Sensor Status Codes</h3>
+            <ul>
+                <li><code>0</code> - Normal Operation</li>
+                <li><code>1</code> - Alarm Level 1 (Warning)</li>
+                <li><code>2</code> - Alarm Level 2 (Critical)</li>
+                <li><code>3</code> - Detector Error</li>
+                <li><code>4</code> - Detector Disabled</li>
+                <li><code>5</code> - Line Open Fault</li>
+                <li><code>6</code> - Line Short Fault</li>
+            </ul>
+            
+            <h3>📡 Real-time Updates</h3>
+            <p>Connect to SignalR hub at <code>/monitoringHub</code> for real-time updates. Events include:</p>
+            <ul>
+                <li><code>SensorUpdate</code> - Sensor value changes</li>
+                <li><code>NewAlarm</code> - New alarm triggered</li>
+                <li><code>AlarmCleared</code> - Alarm resolved</li>
+                <li><code>SiteStatusChanged</code> - Site status update</li>
+            </ul>
+            
+            <h3>📝 API Response Format</h3>
+            <p>All endpoints return standardized responses:</p>
+            <pre>{
+  ""success"": true,
+  ""message"": ""Operation completed"",
+  ""data"": { ... },
+  ""count"": 10,
+  ""timestamp"": ""2025-01-15T10:00:00Z""
+}</pre>
+            
+            <h3>⚡ Rate Limiting</h3>
+            <p>API requests are limited to 1000 per hour per authenticated user.</p>
+            
+            <h3>🔒 Security</h3>
+            <ul>
+                <li>JWT tokens expire after 8 hours</li>
+                <li>Passwords hashed with BCrypt (work factor 12)</li>
+                <li>Account lockout after 5 failed login attempts</li>
+                <li>HTTPS required in production</li>
+            </ul>
         ",
         Contact = new OpenApiContact
         {
-            Name = "Gas Fire Monitoring System",
+            Name = "Gas Fire Monitoring Support",
             Email = "support@gasfiremonitoring.com"
+        },
+        License = new OpenApiLicense
+        {
+            Name = "Commercial License"
         }
     });
 
@@ -194,13 +206,17 @@ builder.Services.AddSwaggerGen(options =>
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
     if (File.Exists(xmlPath))
     {
-        options.IncludeXmlComments(xmlPath);
+        options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
     }
 
     // Configure JWT authentication in Swagger
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = @"JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token in the text input below.",
+        Description = @"JWT Authorization header using the Bearer scheme.
+                      <br/><br/>
+                      Enter 'Bearer' [space] and then your token in the text input below.
+                      <br/><br/>
+                      Example: <b>Bearer eyJhbGciOiJIUzI1NiIsInR5cCI...</b>",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
@@ -223,8 +239,14 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 
+    // Add operation filter for better documentation
     options.OperationFilter<SwaggerDefaultValues>();
 
+    // Uncomment these if you created the SwaggerFilters.cs file:
+    options.OperationFilter<SwaggerResponseExampleFilter>();
+    options.DocumentFilter<SwaggerDocumentFilter>();
+
+    // Group endpoints by tags with custom icons
     options.TagActionsBy(api =>
     {
         var controllerName = api.ActionDescriptor.RouteValues["controller"];
@@ -240,7 +262,8 @@ builder.Services.AddSwaggerGen(options =>
         }};
     });
 
-    options.OrderActionsBy(apiDesc => apiDesc.GroupName);
+    // Order actions alphabetically
+    options.OrderActionsBy(apiDesc => $"{apiDesc.ActionDescriptor.RouteValues["controller"]}_{apiDesc.HttpMethod}");
 });
 
 // Add FluentValidation
@@ -273,65 +296,43 @@ builder.Services.AddScoped<IAlarmRepository, AlarmRepository>();
 builder.Services.AddScoped<ISiteRepository, SiteRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
-// Register Business Service Layer (Domain Logic)  
+// Register Business Service Layer (Domain Logic)
 builder.Services.AddScoped<ISensorService, SensorService>();
 builder.Services.AddScoped<IAlarmService, AlarmService>();
 builder.Services.AddScoped<ISiteService, SiteService>();
-builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
-builder.Services.AddScoped<ILayoutService, LayoutService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 
-// Register Infrastructure Service Layer
+// Register Infrastructure Services
 builder.Services.AddSingleton<IMqttService, MqttService>();
-builder.Services.AddScoped<DataProcessingService>();
-builder.Services.AddScoped<IStructuredLoggingService, StructuredLoggingService>();
+builder.Services.AddSingleton<DataProcessingService>();
+builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
 
+// Build the application
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Gas Fire Monitoring Server API v1.0");
-        c.DisplayRequestDuration();
-        c.EnableTryItOutByDefault();
-        c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
-        c.DefaultModelsExpandDepth(-1);
-        c.DisplayOperationId();
-    });
-}
-
-// Enable CORS
-app.UseCors("AllowAllOrigins");
-
-// Enable serving static files (for SVG layouts)
-app.UseStaticFiles();
-
-// Performance and request logging middleware
+app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<PerformanceLoggingMiddleware>();
 
-// Enhanced Serilog request logging
-app.UseSerilogRequestLogging(configure =>
+// Enable Serilog request logging
+app.UseSerilogRequestLogging(options =>
 {
-    configure.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000}ms [{CorrelationId}]";
-    configure.IncludeQueryInRequestPath = true;
-    configure.GetLevel = (httpContext, elapsed, ex) =>
-    {
-        if (ex != null || httpContext.Response.StatusCode > 499)
-            return LogEventLevel.Error;
-        if (elapsed > 1000 || httpContext.Response.StatusCode > 399)
-            return LogEventLevel.Warning;
-        return LogEventLevel.Information;
-    };
-    configure.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+    options.GetLevel = (httpContext, elapsed, ex) => ex != null
+        ? LogEventLevel.Error
+        : elapsed > 1000
+            ? LogEventLevel.Warning
+            : LogEventLevel.Debug;
+
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
     {
         diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
         diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
-        diagnosticContext.Set("UserAgent", httpContext.Request.Headers.UserAgent.FirstOrDefault());
-        diagnosticContext.Set("CorrelationId", httpContext.TraceIdentifier);
-        diagnosticContext.Set("RequestSize", httpContext.Request.ContentLength ?? 0);
+        diagnosticContext.Set("RequestProtocol", httpContext.Request.Protocol);
+        diagnosticContext.Set("RequestContentType", httpContext.Request.ContentType);
+        diagnosticContext.Set("RequestContentLength", httpContext.Request.ContentLength ?? 0);
+        diagnosticContext.Set("ResponseContentType", httpContext.Response.ContentType);
+        diagnosticContext.Set("ResponseContentLength", httpContext.Response.ContentLength ?? 0);
         diagnosticContext.Set("ResponseSize", httpContext.Response.ContentLength ?? 0);
 
         if (httpContext.User.Identity?.IsAuthenticated == true)
@@ -346,6 +347,39 @@ app.UseSerilogRequestLogging(configure =>
         }
     };
 });
+
+// Configure Swagger UI
+if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Gas Fire Monitoring API v1");
+
+        // Enhanced UI customization
+        options.DocumentTitle = "Gas Fire Monitoring API Documentation";
+        options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
+        options.DefaultModelsExpandDepth(2);
+        options.DefaultModelRendering(Swashbuckle.AspNetCore.SwaggerUI.ModelRendering.Model);
+        options.DisplayRequestDuration();
+        options.EnableDeepLinking();
+        options.EnableFilter();
+        options.ShowExtensions();
+        options.ShowCommonExtensions();
+        options.EnableValidator();
+
+        // Add custom CSS and JS if you created the files
+        // Uncomment these lines if you added the custom CSS and JS files:
+        options.InjectStylesheet("/swagger-ui/custom.css");
+        options.InjectJavascript("/swagger-ui/custom.js");
+    });
+}
+
+// Enable CORS
+app.UseCors("AllowAllOrigins");
+
+// Serve static files (for Swagger custom CSS/JS if added)
+app.UseStaticFiles();
 
 // Authentication & Authorization middleware
 app.UseAuthentication();
