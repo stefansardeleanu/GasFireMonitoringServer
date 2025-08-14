@@ -159,14 +159,15 @@
       "showLabels": true
     }
   },
+
   {
-    "id": 12,
-    "name": "StatieBratila",
-    "county": "Prahova",
+    "id": 2001,
+    "name": "Bucsani",
+    "county": "Dambovita",
     "mapX": 41.2,
     "mapY": 68.5,
     "layoutMode": "auto",
-    "layoutFile": "site_12_layout.svg",
+    "layoutFile": "site_2001_layout.svg",
     "gridConfig": {
       "columns": 0,
       "style": "square",

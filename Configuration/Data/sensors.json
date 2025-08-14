@@ -138,5 +138,12 @@
     "layoutX": 60,
     "layoutY": 65,
     "displayName": ""
+  },
+  {
+    "siteId": 2001,
+    "channelId": "CH40",
+    "layoutX": 60,
+    "layoutY": 65,
+    "displayName": "kgd-dreacu"
   }
 ]

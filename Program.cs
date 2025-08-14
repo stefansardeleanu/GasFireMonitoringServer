@@ -129,67 +129,61 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Gas Fire Monitoring Server API",
         Version = "v1.0",
-        Description = @"
-            <h2>Professional Gas & Fire Monitoring System API</h2>
-            
-            <p>This API provides comprehensive monitoring capabilities for industrial gas and fire detection systems across multiple sites.</p>
-            
-            <h3>🔑 Authentication</h3>
-            <p>All endpoints (except login) require JWT authentication. Use <code>/api/auth/login</code> to obtain a token, then include it in the Authorization header:</p>
-            <pre>Authorization: Bearer [your-token-here]</pre>
-            
-            <h3>📊 Key Features</h3>
-            <ul>
-                <li><strong>Real-time Monitoring:</strong> Live sensor data from industrial sites</li>
-                <li><strong>Multi-level Alarms:</strong> Level 1 (Warning) and Level 2 (Critical) alerts</li>
-                <li><strong>Geographic Organization:</strong> Sites grouped by counties</li>
-                <li><strong>Role-based Access:</strong> CEO, Regional, and Operator roles with site-level permissions</li>
-                <li><strong>SignalR Integration:</strong> Real-time updates via WebSocket connection</li>
-                <li><strong>SVG Layout Support:</strong> Custom site layouts with sensor positioning</li>
-                <li><strong>Dynamic Configuration:</strong> Site and sensor configurations managed through API</li>
-            </ul>
-            
-            <h3>🚨 Sensor Status Codes</h3>
-            <ul>
-                <li><code>0</code> - Normal Operation</li>
-                <li><code>1</code> - Alarm Level 1 (Warning)</li>
-                <li><code>2</code> - Alarm Level 2 (Critical)</li>
-                <li><code>3</code> - Detector Error</li>
-                <li><code>4</code> - Detector Disabled</li>
-                <li><code>5</code> - Line Open Fault</li>
-                <li><code>6</code> - Line Short Fault</li>
-            </ul>
-            
-            <h3>📡 Real-time Updates</h3>
-            <p>Connect to SignalR hub at <code>/monitoringHub</code> for real-time updates. Events include:</p>
-            <ul>
-                <li><code>SensorUpdate</code> - Sensor value changes</li>
-                <li><code>NewAlarm</code> - New alarm triggered</li>
-                <li><code>AlarmCleared</code> - Alarm resolved</li>
-                <li><code>SiteStatusChanged</code> - Site status update</li>
-            </ul>
-            
-            <h3>📝 API Response Format</h3>
-            <p>All endpoints return standardized responses:</p>
-            <pre>{
+        Description = @"**Professional Gas & Fire Monitoring System API**
+
+This API provides comprehensive monitoring capabilities for industrial gas and fire detection systems across multiple sites.
+
+## 🔑 Authentication
+All endpoints (except login) require JWT authentication. Use `/api/auth/login` to obtain a token, then include it in the Authorization header:
+```
+Authorization: Bearer [your-token-here]
+```
+
+## 📊 Key Features
+- **Real-time Monitoring:** Live sensor data from industrial sites
+- **Multi-level Alarms:** Level 1 (Warning) and Level 2 (Critical) alerts
+- **Geographic Organization:** Sites grouped by counties
+- **Role-based Access:** CEO, Regional, and Operator roles with site-level permissions
+- **SignalR Integration:** Real-time updates via WebSocket connection
+- **SVG Layout Support:** Custom site layouts with sensor positioning
+- **Dynamic Configuration:** Site and sensor configurations managed through API
+
+## 🚨 Sensor Status Codes
+- `0` - Normal Operation
+- `1` - Alarm Level 1 (Warning)
+- `2` - Alarm Level 2 (Critical)
+- `3` - Detector Error
+- `4` - Detector Disabled
+- `5` - Line Open Fault
+- `6` - Line Short Fault
+
+## 📡 Real-time Updates
+Connect to SignalR hub at `/monitoringHub` for real-time updates. Events include:
+- `SensorUpdate` - Sensor value changes
+- `NewAlarm` - New alarm triggered
+- `AlarmCleared` - Alarm resolved
+- `SiteStatusChanged` - Site status update
+
+## 📝 API Response Format
+All endpoints return standardized responses:
+```json
+{
   ""success"": true,
   ""message"": ""Operation completed"",
   ""data"": { ... },
   ""count"": 10,
   ""timestamp"": ""2025-01-15T10:00:00Z""
-}</pre>
-            
-            <h3>⚡ Rate Limiting</h3>
-            <p>API requests are limited to 1000 per hour per authenticated user.</p>
-            
-            <h3>🔒 Security</h3>
-            <ul>
-                <li>JWT tokens expire after 8 hours</li>
-                <li>Passwords hashed with BCrypt (work factor 12)</li>
-                <li>Account lockout after 5 failed login attempts</li>
-                <li>HTTPS required in production</li>
-            </ul>
-        ",
+}
+```
+
+## ⚡ Rate Limiting
+API requests are limited to 1000 per hour per authenticated user.
+
+## 🔒 Security
+- JWT tokens expire after 8 hours
+- Passwords hashed with BCrypt (work factor 12)
+- Account lockout after 5 failed login attempts
+- HTTPS required in production",
         Contact = new OpenApiContact
         {
             Name = "Gas Fire Monitoring Support",
@@ -243,8 +237,8 @@ builder.Services.AddSwaggerGen(options =>
     options.OperationFilter<SwaggerDefaultValues>();
 
     // Uncomment these if you created the SwaggerFilters.cs file:
-    options.OperationFilter<SwaggerResponseExampleFilter>();
-    options.DocumentFilter<SwaggerDocumentFilter>();
+    // options.OperationFilter<SwaggerResponseExampleFilter>();
+    // options.DocumentFilter<SwaggerDocumentFilter>();
 
     // Group endpoints by tags with custom icons
     options.TagActionsBy(api =>
@@ -370,8 +364,8 @@ if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
 
         // Add custom CSS and JS if you created the files
         // Uncomment these lines if you added the custom CSS and JS files:
-        options.InjectStylesheet("/swagger-ui/custom.css");
-        options.InjectJavascript("/swagger-ui/custom.js");
+        // options.InjectStylesheet("/swagger-ui/custom.css");
+        // options.InjectJavascript("/swagger-ui/custom.js");
     });
 }
 
