@@ -383,17 +383,22 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<MonitoringHub>("/monitoringHub");
 
-// Start MQTT service
+// Start MQTT service and initialize DataProcessingService
 try
 {
     Log.Information("Starting MQTT service...");
     var mqttService = app.Services.GetRequiredService<IMqttService>();
     await mqttService.ConnectAsync();
     Log.Information("MQTT service started successfully");
+
+    // Force DataProcessingService creation
+    Log.Information("Initializing DataProcessingService...");
+    var dataProcessingService = app.Services.GetRequiredService<DataProcessingService>();
+    Log.Information("DataProcessingService initialized and subscribed to MQTT events");
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "Failed to start MQTT service");
+    Log.Fatal(ex, "Failed to start MQTT service or DataProcessingService");
     throw;
 }
 

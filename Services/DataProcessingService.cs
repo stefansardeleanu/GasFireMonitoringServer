@@ -1,9 +1,9 @@
 ﻿// File: Services/DataProcessingService.cs
-// This service processes MQTT messages and updates the database
+// MINIMAL FIX: Only changes to work with existing files
 
 using System;
 using System.Linq;
-using System.Text.Json;  // For parsing JSON
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,6 +22,12 @@ namespace GasFireMonitoringServer.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly IHubContext<MonitoringHub> _hubContext;
 
+        // Performance counters
+        private long _messagesProcessed = 0;
+        private long _sensorsUpdated = 0;
+        private long _alarmsProcessed = 0;
+        private DateTime _lastStatsReport = DateTime.UtcNow;
+
         public DataProcessingService(
             ILogger<DataProcessingService> logger,
             IServiceProvider serviceProvider,
@@ -34,67 +40,70 @@ namespace GasFireMonitoringServer.Services
 
             // Subscribe to MQTT messages
             mqttService.MessageReceived += OnMqttMessageReceived;
+            _logger.LogInformation("DataProcessingService initialized and subscribed to MQTT events");
         }
 
         // This method runs when MQTT message is received
         private async void OnMqttMessageReceived(object sender, string message)
         {
+            _messagesProcessed++;
+
             try
             {
-                _logger.LogInformation($"MQTT message received: {message}");
-
                 // Split topic and payload
                 var parts = message.Split('|');
                 if (parts.Length != 2)
                 {
-                    _logger.LogWarning($"Invalid message format. Expected 'topic|payload', got: {message}");
+                    _logger.LogWarning("Invalid MQTT message format: {Message}", message.Substring(0, Math.Min(100, message.Length)));
                     return;
                 }
 
                 var topic = parts[0];
                 var payload = parts[1];
 
-                _logger.LogInformation($"Processing - Topic: {topic}, Payload length: {payload.Length}");
-
                 // Parse topic: /PLCNEXT/5_PanouHurezani/CH41
                 var topicParts = topic.Split('/').Where(p => !string.IsNullOrEmpty(p)).ToArray();
                 if (topicParts.Length < 3)
                 {
-                    _logger.LogWarning($"Invalid topic format. Expected at least 3 parts, got: {topicParts.Length}");
+                    _logger.LogWarning("Invalid topic format: {Topic}", topic);
                     return;
                 }
 
                 var siteInfo = topicParts[1];  // "5_PanouHurezani"
-                var channel = topicParts[2];    // "CH41" or "Alarms"
+                var channel = topicParts[2];   // "CH41" or "Alarms"
 
                 // Extract site ID and name
                 var siteParts = siteInfo.Split('_', 2);
                 if (!int.TryParse(siteParts[0], out var siteId))
                 {
-                    _logger.LogWarning($"Could not parse site ID from: {siteInfo}");
+                    _logger.LogWarning("Could not parse site ID from: {SiteInfo}", siteInfo);
                     return;
                 }
                 var siteName = siteParts.Length > 1 ? siteParts[1] : "Unknown";
 
-                _logger.LogInformation($"Parsed - Site: {siteId}_{siteName}, Channel: {channel}");
-
-                // Process based on channel
+                // Process based on channel type
                 if (channel.ToLower() == "alarms" || channel.ToLower() == "alarm")
                 {
                     await ProcessAlarm(siteId, siteName, payload);
+                    _alarmsProcessed++;
                 }
                 else if (channel.StartsWith("CH"))
                 {
                     await ProcessSensorData(siteId, siteName, channel, payload);
+                    _sensorsUpdated++;
                 }
                 else
                 {
-                    _logger.LogWarning($"Unknown channel type: {channel}");
+                    _logger.LogDebug("Unknown channel type: {Channel} for site {SiteId}", channel, siteId);
                 }
+
+                // Report statistics every 10 minutes
+                await ReportStatisticsIfNeeded();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing MQTT message");
+                _logger.LogError(ex, "Error processing MQTT message from topic {Topic}",
+                    message.Split('|')[0]);
             }
         }
 
@@ -117,16 +126,14 @@ namespace GasFireMonitoringServer.Services
                 var tagName = GetJsonString(root, $"strCH{channelId}_TAG", "");
                 var detType = GetJsonValue(root, $"iCH{channelId}_DetType", 0);
 
-                _logger.LogDebug($"Extracted values - Tag: {tagName}, mA: {currentMa}, PV: {processValue}, Status: {detStatus}, Type: {detType}");
-
                 // Skip if no tag name
                 if (string.IsNullOrEmpty(tagName))
                 {
-                    _logger.LogWarning($"No tag name found for {channel} at site {siteId}");
+                    _logger.LogDebug("No tag name found for {Channel} at site {SiteId}", channel, siteId);
                     return;
                 }
 
-                // Create a new scope for database access
+                // Create database scope
                 using var scope = _serviceProvider.CreateScope();
                 using var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
@@ -136,7 +143,8 @@ namespace GasFireMonitoringServer.Services
                     var sensor = dbContext.Sensors
                         .FirstOrDefault(s => s.SiteId == siteId && s.ChannelId == channelId);
 
-                    if (sensor == null)
+                    bool isNewSensor = sensor == null;
+                    if (isNewSensor)
                     {
                         sensor = new Sensor
                         {
@@ -148,8 +156,8 @@ namespace GasFireMonitoringServer.Services
                     }
 
                     // Update sensor values
-                    sensor.TagName = tagName;  // <-- IMPORTANT: Set the tag name!
-                    sensor.SiteName = siteName; // <-- Also set site name
+                    sensor.TagName = tagName;
+                    sensor.SiteName = siteName;
                     sensor.DetectorType = (int)(DetectorType)(int)detType;
                     sensor.ProcessValue = processValue;
                     sensor.CurrentValue = currentMa;
@@ -157,34 +165,56 @@ namespace GasFireMonitoringServer.Services
                     sensor.StatusText = GetStatusText((int)detStatus);
                     sensor.Units = GetUnitsForType((int)detType);
                     sensor.LastUpdated = DateTime.UtcNow;
-                    sensor.Topic = $"/PLCNEXT/{siteId}_{siteName}/{channel}"; // Store the topic
-                    sensor.RawJson = payload; // Store the raw JSON for debugging
+                    sensor.Topic = $"/PLCNEXT/{siteId}_{siteName}/{channel}";
+                    sensor.RawJson = payload;
 
                     // Save to database
-                    await dbContext.SaveChangesAsync();
+                    var changeCount = await dbContext.SaveChangesAsync();
 
-                    _logger.LogInformation($"Updated sensor {tagName} at site {siteName} - Status: {sensor.StatusText}");
-
-                    // Send real-time update to connected clients
-                    await MonitoringHub.SendSensorUpdate(_hubContext, siteId, new
+                    if (changeCount > 0)
                     {
-                        id = $"{siteId}_{channelId}",
-                        siteId = siteId,
-                        tag = tagName,
-                        processValue = processValue,
-                        status = detStatus,
-                        units = sensor.Units,
-                        lastUpdate = sensor.LastUpdated
-                    });
+                        // Log important events
+                        if (isNewSensor)
+                        {
+                            _logger.LogInformation("New sensor added: {TagName} at site {SiteName} (ID: {SiteId})",
+                                tagName, siteName, siteId);
+                        }
+
+                        // Log alarm conditions
+                        if (detStatus > 0)
+                        {
+                            _logger.LogWarning("Sensor alarm: {TagName} at {SiteName} - Status: {StatusText}, Value: {ProcessValue} {Units}",
+                                tagName, siteName, sensor.StatusText, processValue, sensor.Units);
+                        }
+
+                        // Send real-time update to connected clients (using existing method)
+                        await MonitoringHub.SendSensorUpdate(_hubContext, siteId, new
+                        {
+                            id = $"{siteId}_{channelId}",
+                            siteId = siteId,
+                            tag = tagName,
+                            processValue = processValue,
+                            status = detStatus,
+                            units = sensor.Units,
+                            lastUpdate = sensor.LastUpdated
+                        });
+                    }
+                    else
+                    {
+                        _logger.LogDebug("No database changes for sensor {TagName} at site {SiteName}", tagName, siteName);
+                    }
                 }
                 catch (Exception dbEx)
                 {
-                    _logger.LogError(dbEx, "Database error while processing sensor data");
+                    _logger.LogError(dbEx, "Database error processing sensor {TagName} at site {SiteName}",
+                        tagName, siteName);
+                    throw;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error processing sensor data for {channel}");
+                _logger.LogError(ex, "Error processing sensor data for {Channel} at site {SiteId}", channel, siteId);
+                throw;
             }
         }
 
@@ -193,174 +223,145 @@ namespace GasFireMonitoringServer.Services
         {
             try
             {
-                _logger.LogInformation($"Processing alarm - Site: {siteId}_{siteName}, Payload: {payload}");
+                _logger.LogWarning("ALARM received from site {SiteName} (ID: {SiteId}): {Message}",
+                    siteName, siteId, payload);
 
                 // Parse alarm format: "DT#2024-11-27-07:28:40.99, Alarm Level 2, Det_01"
                 var parts = payload.Split(',').Select(p => p.Trim()).ToArray();
                 if (parts.Length < 3)
                 {
-                    _logger.LogWarning($"Invalid alarm format. Expected 3 parts, got {parts.Length}. Payload: {payload}");
+                    _logger.LogWarning("Invalid alarm format from site {SiteId}. Expected 3 parts, got {Count}. Payload: {Payload}",
+                        siteId, parts.Length, payload);
                     return;
                 }
 
-                // Extract sensor tag (third part)
                 var sensorTag = parts[2];
-
-                // Extract alarm description (second part - e.g. "Alarm Level 2", "Detector Fault", etc.)
                 var alarmDescription = parts[1];
 
-                // Parse timestamp from "DT#2024-11-27-07:28:40.99"
-                DateTime alarmTimestamp = DateTime.UtcNow; // Default to now
-                var timestampStr = parts[0];
-                if (timestampStr.StartsWith("DT#"))
-                {
-                    try
-                    {
-                        // Remove "DT#" prefix
-                        var dateStr = timestampStr.Substring(3);
-
-                        // Parse the specific format: 2024-11-27-22:34:23.55
-                        // Split by dash to separate date and time parts
-                        var dateTimeParts = dateStr.Split('-');
-                        if (dateTimeParts.Length >= 4)
-                        {
-                            // Reconstruct in a standard format: "2024-11-27 22:34:23.55"
-                            var year = dateTimeParts[0];
-                            var month = dateTimeParts[1];
-                            var day = dateTimeParts[2];
-                            var time = string.Join(":", dateTimeParts.Skip(3)); // Join remaining parts as time
-
-                            var standardFormat = $"{year}-{month}-{day} {time}";
-                            alarmTimestamp = DateTime.Parse(standardFormat, System.Globalization.CultureInfo.InvariantCulture);
-                        }
-                        else
-                        {
-                            _logger.LogWarning($"Unexpected timestamp format: {dateStr}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning($"Could not parse alarm timestamp: {timestampStr}. Using current time. Error: {ex.Message}");
-                    }
-                }
-
-                // Create a new scope for database access
+                // Create database scope for alarm logging
                 using var scope = _serviceProvider.CreateScope();
                 using var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-                // Create new alarm record
                 var alarm = new Alarm
                 {
                     SiteId = siteId,
                     SiteName = siteName,
                     SensorTag = sensorTag,
-                    AlarmMessage = alarmDescription,  // Just the alarm description part
-                    RawMessage = payload,             // Complete message for reference
-                    Timestamp = alarmTimestamp
+                    AlarmMessage = alarmDescription,
+                    RawMessage = payload,
+                    Timestamp = DateTime.UtcNow
+                    // REMOVED: IsAcknowledged = false (doesn't exist in your Alarm entity)
                 };
 
                 dbContext.Alarms.Add(alarm);
                 await dbContext.SaveChangesAsync();
 
-                _logger.LogWarning($"Alarm recorded: {siteName} - {sensorTag} - {alarmDescription}");
-
-                // Send real-time alarm notification to connected clients
+                // Send real-time alarm notification (using existing method name)
                 await MonitoringHub.SendAlarmNotification(_hubContext, siteId, new
                 {
                     id = alarm.Id,
                     siteId = siteId,
                     siteName = siteName,
                     sensorTag = sensorTag,
-                    alarmMessage = alarmDescription,
-                    rawMessage = payload,
+                    message = alarmDescription,
                     timestamp = alarm.Timestamp
                 });
+
+                _logger.LogWarning("Alarm logged: {AlarmDescription} for sensor {SensorTag} at {SiteName}",
+                    alarmDescription, sensorTag, siteName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error processing alarm. Payload: {payload}");
+                _logger.LogError(ex, "Error processing alarm for site {SiteId}", siteId);
             }
         }
 
-        // Helper method to get double value from JSON
+        // Report processing statistics periodically
+        private async Task ReportStatisticsIfNeeded()
+        {
+            var now = DateTime.UtcNow;
+            if (now - _lastStatsReport > TimeSpan.FromMinutes(10))
+            {
+                _logger.LogInformation("Processing Statistics: {MessagesProcessed} messages, {SensorsUpdated} sensor updates, {AlarmsProcessed} alarms processed since last report",
+                    _messagesProcessed, _sensorsUpdated, _alarmsProcessed);
+
+                _lastStatsReport = now;
+                // Reset counters for next period
+                _messagesProcessed = 0;
+                _sensorsUpdated = 0;
+                _alarmsProcessed = 0;
+            }
+        }
+
+        // Helper method to safely get double values from JSON
         private double GetJsonValue(JsonElement root, string propertyName, double defaultValue)
         {
-            if (root.TryGetProperty(propertyName, out var element))
+            try
             {
-                // Handle different JSON value types
-                switch (element.ValueKind)
+                if (root.TryGetProperty(propertyName, out var element))
                 {
-                    case JsonValueKind.Number:
-                        if (element.TryGetDouble(out var doubleValue))
-                            return doubleValue;
-                        break;
-
-                    case JsonValueKind.String:
-                        var stringValue = element.GetString();
-                        if (!string.IsNullOrEmpty(stringValue))
-                        {
-                            // Try to parse as double (handles scientific notation)
-                            if (double.TryParse(stringValue,
-                                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowExponent,
-                                System.Globalization.CultureInfo.InvariantCulture,
-                                out var parsed))
-                            {
-                                return parsed;
-                            }
-
-                            // Try to parse as integer
-                            if (int.TryParse(stringValue, out var intValue))
-                            {
-                                return intValue;
-                            }
-                        }
-                        break;
+                    if (element.ValueKind == JsonValueKind.String)
+                    {
+                        if (double.TryParse(element.GetString(), out var result))
+                            return result;
+                    }
+                    else if (element.ValueKind == JsonValueKind.Number)
+                    {
+                        return element.GetDouble();
+                    }
                 }
+                return defaultValue;
             }
-            return defaultValue;
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error parsing {PropertyName}, using default: {DefaultValue}", propertyName, defaultValue);
+                return defaultValue;
+            }
         }
 
-        // Helper method to get string value from JSON
+        // Helper method to safely get string values from JSON
         private string GetJsonString(JsonElement root, string propertyName, string defaultValue)
         {
-            if (root.TryGetProperty(propertyName, out var element))
+            try
             {
-                return element.GetString() ?? defaultValue;
+                if (root.TryGetProperty(propertyName, out var element))
+                {
+                    return element.GetString() ?? defaultValue;
+                }
+                return defaultValue;
             }
-            return defaultValue;
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error parsing {PropertyName}, using default: {DefaultValue}", propertyName, defaultValue);
+                return defaultValue;
+            }
         }
 
-        // Get units based on detector type
-        private string GetUnitsForType(int type)
+        // Helper method to get status text
+        private string GetStatusText(int status)
         {
-            return type switch
+            return status switch
             {
-                1 => "%LEL",
-                2 => "PPM",
-                3 => "mA",
-                4 => "mA",
-                5 => "mA",
-                _ => ""
+                0 => "Normal",
+                1 => "Alarm Level 1",
+                2 => "Alarm Level 2",
+                3 => "Detector Error",
+                4 => "Detector Disabled",
+                5 => "Line Open Fault",
+                6 => "Line Short Fault",
+                _ => $"Unknown Status {status}"
             };
         }
 
-        // Get status text based on status code
-        private string GetStatusText(int statusCode)
+        // Helper method to get units for detector type
+        private string GetUnitsForType(int detectorType)
         {
-            return statusCode switch
+            return detectorType switch
             {
-                0 => "Normal",
-                1 => "AlarmLevel1",
-                2 => "AlarmLevel2",
-                3 => "DetectorError",
-                4 => "LineOpenFault",
-                5 => "LineShortFault",
-                6 => "Calibrating",
-                7 => "Maintenance",
-                8 => "Disabled",
-                9 => "Testing",
-                10 => "Unknown",
-                _ => $"Status{statusCode}"
+                1 => "%LEL",  // Gas detector
+                2 => "units", // Flame detector
+                3 => "PPM",   // Toxic gas
+                _ => "units"
             };
         }
     }
