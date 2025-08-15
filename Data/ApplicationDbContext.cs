@@ -1,6 +1,6 @@
 ﻿// File: Data/ApplicationDbContext.cs
 // This class manages the connection to MariaDB
-// UPDATED: Added User entity for authentication
+// UPDATED: Added comprehensive performance indexes for Phase 7.3
 
 using Microsoft.EntityFrameworkCore;  // Entity Framework Core
 using GasFireMonitoringServer.Models.Entities;
@@ -35,13 +35,50 @@ namespace GasFireMonitoringServer.Data
                 // Configure primary key
                 entity.HasKey(e => e.Id);
 
-                // Configure properties
+                // Configure properties with proper constraints
                 entity.Property(e => e.SiteName).HasMaxLength(100);
                 entity.Property(e => e.TagName).HasMaxLength(50);
                 entity.Property(e => e.Units).HasMaxLength(10);
+                entity.Property(e => e.ChannelId).HasMaxLength(10);
+                entity.Property(e => e.StatusText).HasMaxLength(100);
+                entity.Property(e => e.Topic).HasMaxLength(200);
+                entity.Property(e => e.RawJson).HasColumnType("TEXT");
 
-                // Create index for faster queries
-                entity.HasIndex(e => e.SiteId);
+                // ===== PERFORMANCE INDEXES FOR SENSOR QUERIES =====
+
+                // Basic site filtering - MOST USED QUERY PATTERN
+                // Supports: WHERE s.SiteId = @siteId ORDER BY s.ChannelId
+                entity.HasIndex(e => new { e.SiteId, e.ChannelId })
+                    .HasDatabaseName("IX_Sensors_SiteId_ChannelId");
+
+                // Status filtering for alarm queries
+                // Supports: WHERE s.Status IN (1, 2) ORDER BY s.SiteId, s.ChannelId
+                entity.HasIndex(e => new { e.Status, e.SiteId, e.ChannelId })
+                    .HasDatabaseName("IX_Sensors_Status_SiteId_ChannelId");
+
+                // Last update time queries for connectivity status
+                // Supports: ORDER BY s.LastUpdated DESC, filtering by update time
+                entity.HasIndex(e => e.LastUpdated)
+                    .HasDatabaseName("IX_Sensors_LastUpdated");
+
+                // Site status aggregation queries
+                // Supports: GROUP BY SiteId with COUNT operations
+                entity.HasIndex(e => new { e.SiteId, e.Status })
+                    .HasDatabaseName("IX_Sensors_SiteId_Status");
+
+                // Tag-based lookups for specific sensor queries
+                // Supports: WHERE s.TagName = @tagName
+                entity.HasIndex(e => e.TagName)
+                    .HasDatabaseName("IX_Sensors_TagName");
+
+                // Detector type filtering for dashboard queries
+                // Supports: WHERE s.DetectorType = @type AND s.SiteId = @siteId
+                entity.HasIndex(e => new { e.DetectorType, e.SiteId })
+                    .HasDatabaseName("IX_Sensors_DetectorType_SiteId");
+
+                // Keep original basic index for backward compatibility
+                entity.HasIndex(e => e.SiteId)
+                    .HasDatabaseName("IX_Sensors_SiteId_Basic");
             });
 
             // Configure Alarm table
@@ -53,19 +90,54 @@ namespace GasFireMonitoringServer.Data
                 // Configure primary key
                 entity.HasKey(e => e.Id);
 
-                // Configure properties
+                // Configure properties with proper constraints
                 entity.Property(e => e.SiteName).HasMaxLength(100);
                 entity.Property(e => e.SensorTag).HasMaxLength(50);
                 entity.Property(e => e.AlarmMessage).HasMaxLength(200);
                 entity.Property(e => e.RawMessage).HasMaxLength(500);
 
-                // Create indexes for faster queries
-                entity.HasIndex(e => e.SiteId);
-                entity.HasIndex(e => e.Timestamp);
-                entity.HasIndex(e => e.SensorTag);
+                // ===== PERFORMANCE INDEXES FOR ALARM QUERIES =====
+
+                // Most common alarm query pattern: site + time range
+                // Supports: WHERE a.SiteId = @siteId AND a.Timestamp >= @start AND a.Timestamp <= @end ORDER BY a.Timestamp DESC
+                entity.HasIndex(e => new { e.SiteId, e.Timestamp })
+                    .HasDatabaseName("IX_Alarms_SiteId_Timestamp")
+                    .IsDescending(false, true); // SiteId ASC, Timestamp DESC for ORDER BY performance
+
+                // Time-based queries for dashboard statistics
+                // Supports: WHERE a.Timestamp >= @date ORDER BY a.Timestamp DESC
+                entity.HasIndex(e => e.Timestamp)
+                    .HasDatabaseName("IX_Alarms_Timestamp")
+                    .IsDescending(true); // DESC for most recent first queries
+
+                // Sensor-specific alarm history
+                // Supports: WHERE a.SensorTag = @tag ORDER BY a.Timestamp DESC
+                entity.HasIndex(e => new { e.SensorTag, e.Timestamp })
+                    .HasDatabaseName("IX_Alarms_SensorTag_Timestamp")
+                    .IsDescending(false, true); // SensorTag ASC, Timestamp DESC
+
+                // Alarm message frequency analysis
+                // Supports: GROUP BY a.AlarmMessage with COUNT operations
+                entity.HasIndex(e => e.AlarmMessage)
+                    .HasDatabaseName("IX_Alarms_AlarmMessage");
+
+                // Site name filtering (used in some dashboard queries)
+                // Supports: WHERE a.SiteName = @siteName
+                entity.HasIndex(e => e.SiteName)
+                    .HasDatabaseName("IX_Alarms_SiteName");
+
+                // Combined index for complex filtering with limits
+                // Supports: WHERE a.SiteId = @siteId AND a.Timestamp >= @start ORDER BY a.Timestamp DESC LIMIT @limit
+                entity.HasIndex(e => new { e.SiteId, e.Timestamp, e.Id })
+                    .HasDatabaseName("IX_Alarms_SiteId_Timestamp_Id")
+                    .IsDescending(false, true, false); // Includes Id for stable sorting
+
+                // Keep original indexes for backward compatibility
+                entity.HasIndex(e => e.SiteId)
+                    .HasDatabaseName("IX_Alarms_SiteId_Basic");
             });
 
-            // Configure User table (NEW for authentication)
+            // Configure User table (for authentication)
             modelBuilder.Entity<User>(entity =>
             {
                 // Set the table name
@@ -117,14 +189,51 @@ namespace GasFireMonitoringServer.Data
                 entity.Property(e => e.FailedLoginAttempts)
                     .HasDefaultValue(0);
 
-                // Create indexes for faster queries
-                entity.HasIndex(e => e.Username)
+                // ===== PERFORMANCE INDEXES FOR USER QUERIES =====
+
+                // Login queries - CRITICAL for authentication performance
+                // Supports: WHERE u.Username = @username AND u.IsActive = true
+                entity.HasIndex(e => new { e.Username, e.IsActive })
+                    .HasDatabaseName("IX_Users_Username_IsActive")
                     .IsUnique(); // Username must be unique
 
-                entity.HasIndex(e => e.Role);
-                entity.HasIndex(e => e.IsActive);
-                entity.HasIndex(e => e.LastLoginAt);
-                entity.HasIndex(e => e.CreatedAt);
+                // Role-based queries for authorization
+                // Supports: WHERE u.Role = @role AND u.IsActive = true ORDER BY u.Username
+                entity.HasIndex(e => new { e.Role, e.IsActive, e.Username })
+                    .HasDatabaseName("IX_Users_Role_IsActive_Username");
+
+                // Account security and audit queries
+                // Supports: WHERE u.LastLoginAt >= @date ORDER BY u.LastLoginAt DESC
+                entity.HasIndex(e => e.LastLoginAt)
+                    .HasDatabaseName("IX_Users_LastLoginAt")
+                    .IsDescending(true);
+
+                // User management and reporting queries
+                // Supports: WHERE u.CreatedAt >= @date ORDER BY u.CreatedAt DESC
+                entity.HasIndex(e => e.CreatedAt)
+                    .HasDatabaseName("IX_Users_CreatedAt")
+                    .IsDescending(true);
+
+                // Failed login tracking for security
+                // Supports: WHERE u.FailedLoginAttempts > 0 AND u.IsActive = true
+                entity.HasIndex(e => new { e.FailedLoginAttempts, e.IsActive })
+                    .HasDatabaseName("IX_Users_FailedLoginAttempts_IsActive");
+
+                // Account status queries
+                // Supports: WHERE u.IsActive = @active ORDER BY u.Username
+                entity.HasIndex(e => new { e.IsActive, e.Username })
+                    .HasDatabaseName("IX_Users_IsActive_Username");
+
+                // Keep original basic indexes for backward compatibility
+                entity.HasIndex(e => e.Username)
+                    .IsUnique()
+                    .HasDatabaseName("IX_Users_Username_Basic");
+
+                entity.HasIndex(e => e.Role)
+                    .HasDatabaseName("IX_Users_Role_Basic");
+
+                entity.HasIndex(e => e.IsActive)
+                    .HasDatabaseName("IX_Users_IsActive_Basic");
             });
         }
     }
