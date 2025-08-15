@@ -1,5 +1,5 @@
 ﻿// File: Controllers/SensorController.cs
-// REST API controller for sensor data - REFACTORED to use service layer
+// REST API controller for sensor data with comprehensive XML documentation
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -12,16 +12,43 @@ using GasFireMonitoringServer.Models.Entities;
 namespace GasFireMonitoringServer.Controllers
 {
     /// <summary>
-    /// API controller for managing sensor data
+    /// API controller for managing sensor data from gas and fire monitoring systems
     /// </summary>
+    /// <remarks>
+    /// This controller provides endpoints for retrieving and managing sensor data from
+    /// various gas, fire, and environmental monitoring sensors across multiple industrial sites.
+    /// All endpoints require Bearer token authentication.
+    /// 
+    /// Sensor Types Supported:
+    /// - Gas Detectors (Type 1): Monitor for combustible gases
+    /// - Fire Detectors (Type 2): Detect fire conditions  
+    /// - Smoke Detectors (Type 3): Early fire warning systems
+    /// - Temperature Sensors (Type 4): Environmental monitoring
+    /// - Pressure Sensors (Type 5): Process monitoring
+    /// 
+    /// Status Codes:
+    /// - 0: Normal operation
+    /// - 1: Alarm Level 1 (warning threshold exceeded)
+    /// - 2: Alarm Level 2 (critical threshold exceeded)
+    /// - 3: Detector Error (hardware fault)
+    /// - 4: Detector Disabled (maintenance mode)
+    /// - 5: Line Open Fault (wiring issue)
+    /// - 6: Line Short Fault (electrical short)
+    /// </remarks>
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize] // All endpoints require authentication
+    [Authorize]
+    [Produces("application/json")]
     public class SensorController : ControllerBase
     {
         private readonly ISensorService _sensorService;
         private readonly ILogger<SensorController> _logger;
 
+        /// <summary>
+        /// Initializes a new instance of the SensorController
+        /// </summary>
+        /// <param name="sensorService">Service for sensor business logic operations</param>
+        /// <param name="logger">Logger for recording controller operations</param>
         public SensorController(ISensorService sensorService, ILogger<SensorController> logger)
         {
             _sensorService = sensorService;
@@ -29,10 +56,32 @@ namespace GasFireMonitoringServer.Controllers
         }
 
         /// <summary>
-        /// Get all sensors across all sites
+        /// Get all sensors across all industrial sites
         /// </summary>
-        /// <returns>List of all sensors grouped by site</returns>
+        /// <remarks>
+        /// Retrieves comprehensive sensor data from all monitored industrial sites.
+        /// Each sensor includes real-time values, status information, and connectivity status.
+        /// 
+        /// The response includes:
+        /// - Current process values and 4-20mA readings
+        /// - Human-readable status text and detector type names
+        /// - Online/offline status based on last update time
+        /// - Site association and channel information
+        /// 
+        /// Use cases:
+        /// - System-wide monitoring dashboards
+        /// - Cross-site analysis and reporting
+        /// - Maintenance team overview screens
+        /// - Emergency response coordination
+        /// </remarks>
+        /// <returns>List of all sensors with current status and values</returns>
+        /// <response code="200">Successfully retrieved all sensors</response>
+        /// <response code="401">Unauthorized - Bearer token required</response>
+        /// <response code="500">Internal server error during sensor retrieval</response>
         [HttpGet]
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 500)]
         public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetAllSensors()
         {
             try
@@ -53,19 +102,47 @@ namespace GasFireMonitoringServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving sensors");
+                _logger.LogError(ex, "Error retrieving all sensors");
                 return StatusCode(500, ApiResponseDto<List<SensorResponseDto>>.ErrorResult(
                     "An error occurred while retrieving sensors"));
             }
         }
 
         /// <summary>
-        /// Get all sensors for a specific site
+        /// Get all sensors for a specific industrial site
         /// </summary>
-        /// <param name="siteId">The site ID</param>
-        /// <returns>List of sensors for the specified site</returns>
+        /// <remarks>
+        /// Retrieves sensor data for a specific site, providing detailed information about
+        /// all monitoring equipment at that location. This is essential for site-specific
+        /// operations and maintenance activities.
+        /// 
+        /// Each sensor response includes:
+        /// - Real-time process values and current readings
+        /// - Detector type classification and capabilities
+        /// - Current alarm state and fault conditions
+        /// - Last communication timestamp and online status
+        /// 
+        /// Common use cases:
+        /// - Site operator control rooms
+        /// - Maintenance team site inspections
+        /// - Emergency response procedures
+        /// - Site performance analysis
+        /// </remarks>
+        /// <param name="siteId">Site ID (1-12 for current industrial facilities)</param>
+        /// <returns>List of sensors at the specified site</returns>
+        /// <response code="200">Successfully retrieved site sensors</response>
+        /// <response code="400">Invalid site ID parameter</response>
+        /// <response code="401">Unauthorized - Bearer token required</response>
+        /// <response code="404">Site not found or no sensors configured</response>
+        /// <response code="500">Internal server error during sensor retrieval</response>
         [HttpGet("site/{siteId}")]
-        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetSensorsBySite(int siteId)
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 200)]
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 404)]
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 500)]
+        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetSensorsBySite(
+            [FromRoute] int siteId)
         {
             try
             {
@@ -78,9 +155,17 @@ namespace GasFireMonitoringServer.Controllers
                 }
 
                 var sensors = await _sensorService.GetSensorsBySiteAsync(siteId);
+                var sensorList = sensors.ToList();
+
+                if (!sensorList.Any())
+                {
+                    _logger.LogWarning("No sensors found for site {SiteId}", siteId);
+                    return NotFound(ApiResponseDto<List<SensorResponseDto>>.NotFoundResult(
+                        $"No sensors found for site {siteId}"));
+                }
 
                 // Convert entities to DTOs
-                var sensorDtos = sensors.Select(ConvertToSensorResponseDto).ToList();
+                var sensorDtos = sensorList.Select(ConvertToSensorResponseDto).ToList();
 
                 _logger.LogInformation("Retrieved {Count} sensors for site {SiteId}", sensorDtos.Count, siteId);
 
@@ -103,11 +188,39 @@ namespace GasFireMonitoringServer.Controllers
         }
 
         /// <summary>
-        /// Get a specific sensor by ID
+        /// Get detailed information for a specific sensor
         /// </summary>
-        /// <param name="id">Sensor ID</param>
-        /// <returns>Sensor details</returns>
+        /// <remarks>
+        /// Retrieves comprehensive details for a single sensor, including all current readings,
+        /// status information, and operational parameters. This endpoint is typically used for
+        /// detailed sensor inspection and troubleshooting activities.
+        /// 
+        /// The detailed response includes:
+        /// - Complete sensor identification (tag name, channel ID, site location)
+        /// - Current process value and 4-20mA current reading
+        /// - Detailed status interpretation and detector type information
+        /// - Connectivity status and last communication timestamp
+        /// - Operational parameters and measurement units
+        /// 
+        /// Use cases:
+        /// - Detailed sensor diagnostics
+        /// - Maintenance troubleshooting
+        /// - Calibration verification
+        /// - Performance monitoring
+        /// </remarks>
+        /// <param name="id">Unique sensor ID</param>
+        /// <returns>Detailed sensor information</returns>
+        /// <response code="200">Successfully retrieved sensor details</response>
+        /// <response code="400">Invalid sensor ID parameter</response>
+        /// <response code="401">Unauthorized - Bearer token required</response>
+        /// <response code="404">Sensor not found</response>
+        /// <response code="500">Internal server error during sensor retrieval</response>
         [HttpGet("{id}")]
+        [ProducesResponseType(typeof(ApiResponseDto<SensorResponseDto>), 200)]
+        [ProducesResponseType(typeof(ApiResponseDto<SensorResponseDto>), 400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(typeof(ApiResponseDto<SensorResponseDto>), 404)]
+        [ProducesResponseType(typeof(ApiResponseDto<SensorResponseDto>), 500)]
         public async Task<ActionResult<ApiResponseDto<SensorResponseDto>>> GetSensor(int id)
         {
             try
@@ -142,25 +255,51 @@ namespace GasFireMonitoringServer.Controllers
             {
                 _logger.LogError(ex, "Error retrieving sensor {SensorId}", id);
                 return StatusCode(500, ApiResponseDto<SensorResponseDto>.ErrorResult(
-                    "An error occurred while retrieving the sensor"));
+                    "An error occurred while retrieving sensor details"));
             }
         }
 
         /// <summary>
-        /// Get sensors currently in alarm state
+        /// Get all sensors currently in alarm state (warning or critical conditions)
         /// </summary>
-        /// <returns>List of sensors with active alarms</returns>
+        /// <remarks>
+        /// Retrieves all sensors across the system that are currently in alarm states
+        /// (Status 1 = Alarm Level 1, Status 2 = Alarm Level 2). This endpoint is critical
+        /// for safety monitoring and emergency response systems.
+        /// 
+        /// Alarm conditions indicate:
+        /// - Level 1: Warning threshold exceeded (requires attention)
+        /// - Level 2: Critical threshold exceeded (requires immediate action)
+        /// 
+        /// The response prioritizes sensors by:
+        /// - Alarm level (Level 2 alarms first)
+        /// - Most recent alarm first
+        /// - Site priority
+        /// 
+        /// Use cases:
+        /// - Emergency response dashboards
+        /// - Safety monitoring systems
+        /// - Alarm acknowledgment workflows
+        /// - Real-time safety alerts
+        /// </remarks>
+        /// <returns>List of sensors currently in alarm state, ordered by severity and time</returns>
+        /// <response code="200">Successfully retrieved alarmed sensors</response>
+        /// <response code="401">Unauthorized - Bearer token required</response>
+        /// <response code="500">Internal server error during alarm sensor retrieval</response>
         [HttpGet("alarms")]
-        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetSensorsInAlarm()
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(typeof(ApiResponseDto<List<SensorResponseDto>>), 500)]
+        public async Task<ActionResult<ApiResponseDto<List<SensorResponseDto>>>> GetAlarmedSensors()
         {
             try
             {
                 _logger.LogInformation("Getting sensors currently in alarm state");
 
-                var sensors = await _sensorService.GetAlarmedSensorsAsync();
+                var alarmedSensors = await _sensorService.GetAlarmedSensorsAsync();
 
                 // Convert entities to DTOs
-                var sensorDtos = sensors.Select(ConvertToSensorResponseDto).ToList();
+                var sensorDtos = alarmedSensors.Select(ConvertToSensorResponseDto).ToList();
 
                 _logger.LogInformation("Retrieved {Count} sensors in alarm state", sensorDtos.Count);
 
@@ -171,19 +310,46 @@ namespace GasFireMonitoringServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving sensors in alarm state");
+                _logger.LogError(ex, "Error retrieving alarmed sensors");
                 return StatusCode(500, ApiResponseDto<List<SensorResponseDto>>.ErrorResult(
-                    "An error occurred while retrieving sensors in alarm state"));
+                    "An error occurred while retrieving alarmed sensors"));
             }
         }
 
         /// <summary>
-        /// Get sensor statistics for dashboard
+        /// Get comprehensive sensor statistics for dashboard displays and reporting
         /// </summary>
-        /// <param name="siteId">Optional site ID to filter statistics</param>
-        /// <returns>Sensor count statistics by status and type</returns>
+        /// <remarks>
+        /// Provides detailed statistical analysis of sensor status and performance for either
+        /// a specific site or the entire system. This endpoint is essential for management
+        /// dashboards, performance monitoring, and operational reporting.
+        /// 
+        /// Statistics include:
+        /// - Total sensor counts by status category (Normal/Alarm/Fault/Disabled)
+        /// - Online/offline connectivity status breakdown
+        /// - Sensor type distribution (Gas/Fire/Smoke/Temperature/Pressure)
+        /// - Last update timestamps and communication health
+        /// - Calculated percentages for dashboard displays
+        /// 
+        /// Use cases:
+        /// - Executive dashboards and KPI monitoring
+        /// - Operational performance reports
+        /// - Maintenance planning and scheduling
+        /// - System health monitoring
+        /// - Compliance and safety reporting
+        /// </remarks>
+        /// <param name="siteId">Optional site ID filter (omit for system-wide statistics)</param>
+        /// <returns>Comprehensive sensor statistics object</returns>
+        /// <response code="200">Successfully retrieved sensor statistics</response>
+        /// <response code="400">Invalid site ID parameter</response>
+        /// <response code="401">Unauthorized - Bearer token required</response>
+        /// <response code="500">Internal server error during statistics calculation</response>
         [HttpGet("statistics")]
-        public async Task<ActionResult<ApiResponseDto<object>>> GetSensorStatistics([FromQuery] int? siteId = null)
+        [ProducesResponseType(typeof(ApiResponseDto<SensorStats>), 200)]
+        [ProducesResponseType(typeof(ApiResponseDto<SensorStats>), 400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(typeof(ApiResponseDto<SensorStats>), 500)]
+        public async Task<ActionResult<ApiResponseDto<SensorStats>>> GetSensorStatistics([FromQuery] int? siteId = null)
         {
             try
             {
@@ -201,19 +367,19 @@ namespace GasFireMonitoringServer.Controllers
 
                 _logger.LogInformation("Retrieved sensor statistics successfully");
 
-                return Ok(ApiResponseDto<object>.SuccessResult(
+                return Ok(ApiResponseDto<SensorStats>.SuccessResult(
                     statistics,
                     "Retrieved sensor statistics successfully"));
             }
             catch (ArgumentException ex)
             {
                 _logger.LogWarning(ex, "Invalid site ID for statistics: {SiteId}", siteId);
-                return BadRequest(ApiResponseDto<object>.ErrorResult(ex.Message));
+                return BadRequest(ApiResponseDto<SensorStats>.ErrorResult(ex.Message));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving sensor statistics");
-                return StatusCode(500, ApiResponseDto<object>.ErrorResult(
+                return StatusCode(500, ApiResponseDto<SensorStats>.ErrorResult(
                     "An error occurred while retrieving sensor statistics"));
             }
         }
@@ -221,8 +387,10 @@ namespace GasFireMonitoringServer.Controllers
         #region Helper Methods
 
         /// <summary>
-        /// Convert Sensor entity to SensorResponseDto
+        /// Convert Sensor entity to SensorResponseDto for API response
         /// </summary>
+        /// <param name="sensor">Sensor entity from business service</param>
+        /// <returns>DTO formatted for API response with computed properties</returns>
         private static SensorResponseDto ConvertToSensorResponseDto(Sensor sensor)
         {
             return new SensorResponseDto
@@ -243,8 +411,10 @@ namespace GasFireMonitoringServer.Controllers
         }
 
         /// <summary>
-        /// Convert detector type ID to human-readable name
+        /// Convert detector type ID to human-readable name for display purposes
         /// </summary>
+        /// <param name="detectorType">Detector type code from PLC</param>
+        /// <returns>Human-readable detector type name</returns>
         private static string GetDetectorTypeName(int detectorType)
         {
             return detectorType switch
