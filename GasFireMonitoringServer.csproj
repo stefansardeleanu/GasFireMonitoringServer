@@ -8,7 +8,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<NoWarn>$(NoWarn);1591</NoWarn>
-	</PropertyGroup>
+	  <UserSecretsId>3169e87f-2cea-4969-afac-0e786777016d</UserSecretsId>
+  </PropertyGroup>
 
 	<!-- XML Documentation Configuration -->
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">

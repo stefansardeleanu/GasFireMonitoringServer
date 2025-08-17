@@ -1,6 +1,6 @@
 ﻿// File: Program.cs
 // COMPLETE ENHANCED VERSION - Phase 7.3 with ALL existing functionality preserved
-// Enhanced with: Performance Monitoring, SignalR Optimization, LINQ Optimization
+// Enhanced with: Performance Monitoring, SignalR Optimization, LINQ Optimization, Swagger Tag Filter Fix
 // PRESERVES: All authentication, validation, logging, MQTT, and configuration features
 
 using FluentValidation.AspNetCore;
@@ -36,6 +36,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 
 // Configure Serilog logging with comprehensive TaskCanceledException filtering
 Log.Logger = new LoggerConfiguration()
@@ -281,6 +282,12 @@ builder.Services.AddSwaggerGen(options =>
             _ => new[] { "Other" }
         };
     });
+
+    // NEW: Add operation filters to fix controller grouping
+    options.OperationFilter<SwaggerDefaultValues>();
+    options.OperationFilter<SwaggerResponseExampleFilter>();
+    options.OperationFilter<SwaggerTagOperationFilter>(); // <-- NEW: This fixes the controller grouping issue
+    options.DocumentFilter<SwaggerDocumentFilter>();
 
     // Order actions alphabetically
     options.OrderActionsBy(apiDesc => $"{apiDesc.ActionDescriptor.RouteValues["controller"]}_{apiDesc.HttpMethod}");

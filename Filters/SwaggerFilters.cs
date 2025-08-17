@@ -10,6 +10,44 @@ using System.Linq;
 namespace GasFireMonitoringServer.Filters
 {
     /// <summary>
+    /// Operation filter that assigns proper tags to controller endpoints for Swagger grouping
+    /// This ensures controllers are grouped correctly instead of appearing under "Other"
+    /// </summary>
+    public class SwaggerTagOperationFilter : IOperationFilter
+    {
+        public void Apply(OpenApiOperation operation, OperationFilterContext context)
+        {
+            // Get the controller name from the API description
+            var controllerName = context.ApiDescription.ActionDescriptor.RouteValues["controller"];
+
+            if (string.IsNullOrEmpty(controllerName))
+                return;
+
+            // Clear any existing tags to avoid conflicts
+            operation.Tags?.Clear();
+
+            // Map controller names to appropriate tags with emojis (matching SwaggerDocumentFilter)
+            var tag = controllerName.ToLower() switch
+            {
+                "auth" => "🔐 Authentication",
+                "sensor" => "📊 Sensors & Monitoring",
+                "alarm" => "🚨 Alarms & Alerts",
+                "site" => "🏭 Sites & Locations",
+                "layout" => "🗺️ Layout Management",
+                "configuration" => "⚙️ Configuration",
+                "monitoring" => "🔄 Real-time Monitoring",
+                _ => $"📋 {controllerName.Substring(0, 1).ToUpper()}{controllerName.Substring(1)}"
+            };
+
+            // Add the appropriate tag
+            operation.Tags = new List<OpenApiTag>
+            {
+                new OpenApiTag { Name = tag }
+            };
+        }
+    }
+
+    /// <summary>
     /// Provides default values for Swagger operations
     /// </summary>
     public class SwaggerDefaultValues : IOperationFilter
