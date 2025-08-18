@@ -39,32 +39,26 @@ namespace GasFireMonitoringServer.Services.Business
         }
 
         /// <summary>
-        /// OPTIMIZED: Get all sites with real-time status and statistics
-        /// PERFORMANCE IMPROVEMENT: Eliminated N+1 queries with bulk operations
-        /// This method was taking 1346ms - now optimized for ~100-150ms
+        /// FIXED: Get all sites with real-time status and statistics
+        /// CONCURRENCY FIX: Sequential database calls instead of parallel to avoid DbContext threading issues
+        /// This method was optimized for performance but caused concurrency issues - now fixed for stability
         /// </summary>
         public async Task<IEnumerable<SiteWithStatus>> GetAllSitesAsync()
         {
             try
             {
-                _logger.LogDebug("Getting all sites with status and statistics (OPTIMIZED)");
+                _logger.LogDebug("Getting all sites with status and statistics (FIXED - Sequential)");
 
-                // OPTIMIZATION 1: Get all data in parallel bulk operations instead of sequential N+1 queries
-                var sitesTask = _siteRepository.GetAllSiteInfoAsync();
-                var allSensorsTask = _sensorRepository.GetAllAsync();
-                var recentAlarmsTask = _alarmRepository.GetAllAsync(
+                // CONCURRENCY FIX: Sequential calls instead of parallel to avoid DbContext threading issues
+                // Each call uses the same DbContext instance, so they must be sequential
+                var sites = await _siteRepository.GetAllSiteInfoAsync();
+                var allSensors = (await _sensorRepository.GetAllAsync()).ToList();
+                var recentAlarms = (await _alarmRepository.GetAllAsync(
                     siteId: null,
                     startDate: DateTime.UtcNow.AddDays(-1),
                     endDate: null,
                     limit: 1000
-                );
-
-                // Wait for all bulk queries to complete
-                await Task.WhenAll(sitesTask, allSensorsTask, recentAlarmsTask);
-
-                var sites = await sitesTask;
-                var allSensors = (await allSensorsTask).ToList();
-                var recentAlarms = (await recentAlarmsTask).ToList();
+                )).ToList();
 
                 // OPTIMIZATION 2: Group sensors and alarms by site ID for O(1) lookup instead of O(n) queries
                 var sensorsBySite = allSensors
@@ -84,12 +78,12 @@ namespace GasFireMonitoringServer.Services.Business
                     return CreateSiteWithStatusFromData(site, siteSensors, siteAlarms);
                 }).ToList();
 
-                _logger.LogInformation("OPTIMIZED: Retrieved {SiteCount} sites with status information in bulk", sitesWithStatus.Count);
+                _logger.LogDebug("Successfully retrieved {Count} sites with calculated status", sitesWithStatus.Count);
                 return sitesWithStatus;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting all sites with status (OPTIMIZED)");
+                _logger.LogError(ex, "Error retrieving all sites");
                 throw;
             }
         }

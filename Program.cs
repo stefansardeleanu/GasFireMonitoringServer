@@ -218,6 +218,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 // EXISTING: Swagger/OpenAPI configuration with comprehensive documentation
+// EXISTING: Swagger/OpenAPI configuration with comprehensive documentation
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -266,24 +267,55 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 
-    // EXISTING: Tag documentation for better organization
+    // FIXED: Tag actions by controller name for proper grouping
     options.TagActionsBy(apiDesc =>
     {
-        return apiDesc.GroupName switch
+        var controllerName = apiDesc.ActionDescriptor.RouteValues["controller"];
+        return controllerName switch
         {
-            "Authentication" => new[] { "Authentication" },
-            "Sensor" => new[] { "Sensor Monitoring" },
-            "Alarm" => new[] { "Alarm Management" },
-            "Site" => new[] { "Site Management" },
-            "Configuration" => new[] { "System Configuration" },
-            "Layout" => new[] { "Layout Management" },
-            "Performance" => new[] { "Performance Monitoring" }, // NEW
-            _ => new[] { "Other" }
+            "Auth" => new[] { "🔐 Authentication" },
+            "Sensor" => new[] { "📊 Sensors & Monitoring" },
+            "Alarm" => new[] { "🚨 Alarms & Alerts" },
+            "Site" => new[] { "🏭 Sites & Locations" },
+            "Configuration" => new[] { "⚙️ Configuration" },
+            "Layout" => new[] { "🗺️ Layout Management" },
+            _ => new[] { $"📋 {controllerName}" }
         };
     });
 
-    // Order actions alphabetically
-    options.OrderActionsBy(apiDesc => $"{apiDesc.ActionDescriptor.RouteValues["controller"]}_{apiDesc.HttpMethod}");
+    // Order actions for better organization
+    options.OrderActionsBy(apiDesc =>
+    {
+        var controllerName = apiDesc.ActionDescriptor.RouteValues["controller"];
+        var actionName = apiDesc.ActionDescriptor.RouteValues["action"];
+        var httpMethod = apiDesc.HttpMethod;
+
+        // Order by controller, then by HTTP method (GET, POST, PUT, DELETE), then by action
+        var methodOrder = httpMethod switch
+        {
+            "GET" => "1",
+            "POST" => "2",
+            "PUT" => "3",
+            "DELETE" => "4",
+            _ => "9"
+        };
+
+        return $"{controllerName}_{methodOrder}_{actionName}";
+    });
+
+    // Add operation and document filters for enhanced documentation
+    options.OperationFilter<SwaggerDefaultValues>();
+    options.DocumentFilter<SwaggerDocumentFilter>();
+
+    // Enable additional Swagger features
+    options.EnableAnnotations();
+    options.DescribeAllParametersInCamelCase();
+    options.CustomOperationIds(apiDesc =>
+    {
+        var controllerName = apiDesc.ActionDescriptor.RouteValues["controller"];
+        var actionName = apiDesc.ActionDescriptor.RouteValues["action"];
+        return $"{controllerName}_{actionName}";
+    });
 });
 
 // EXISTING: FluentValidation
@@ -453,7 +485,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 // EXISTING: Static files with enhanced error handling
 app.UseStaticFiles(new StaticFileOptions

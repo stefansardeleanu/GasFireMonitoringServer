@@ -1,0 +1,149 @@
+[
+  {
+    "siteId": 1,
+    "channelId": "CH41",
+    "layoutX": 25.5,
+    "layoutY": 42.3,
+    "displayName": ""
+  },
+  {
+    "siteId": 1,
+    "channelId": "CH42",
+    "layoutX": 65.2,
+    "layoutY": 38.7,
+    "displayName": ""
+  },
+  {
+    "siteId": 1,
+    "channelId": "CH43",
+    "layoutX": 45.8,
+    "layoutY": 72.1,
+    "displayName": ""
+  },
+  {
+    "siteId": 2,
+    "channelId": "CH41",
+    "layoutX": 35,
+    "layoutY": 55,
+    "displayName": ""
+  },
+  {
+    "siteId": 2,
+    "channelId": "CH42",
+    "layoutX": 75,
+    "layoutY": 35,
+    "displayName": ""
+  },
+  {
+    "siteId": 3,
+    "channelId": "CH41",
+    "layoutX": 50,
+    "layoutY": 30,
+    "displayName": ""
+  },
+  {
+    "siteId": 3,
+    "channelId": "CH42",
+    "layoutX": 30,
+    "layoutY": 70,
+    "displayName": ""
+  },
+  {
+    "siteId": 3,
+    "channelId": "CH43",
+    "layoutX": 70,
+    "layoutY": 70,
+    "displayName": ""
+  },
+  {
+    "siteId": 4,
+    "channelId": "CH41",
+    "layoutX": 40,
+    "layoutY": 40,
+    "displayName": ""
+  },
+  {
+    "siteId": 4,
+    "channelId": "CH42",
+    "layoutX": 60,
+    "layoutY": 60,
+    "displayName": ""
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH41",
+    "layoutX": 30,
+    "layoutY": 40,
+    "displayName": "Main Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH42",
+    "layoutX": 70,
+    "layoutY": 60,
+    "displayName": "Secondary Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH43",
+    "layoutX": 70,
+    "layoutY": 40,
+    "displayName": "Backup Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH44",
+    "layoutX": 25,
+    "layoutY": 65,
+    "displayName": "Perimeter Detector"
+  },
+  {
+    "siteId": 5,
+    "channelId": "CH45",
+    "layoutX": 75,
+    "layoutY": 70,
+    "displayName": "Exit Detector"
+  },
+  {
+    "siteId": 7,
+    "channelId": "CH41",
+    "layoutX": 25,
+    "layoutY": 35,
+    "displayName": ""
+  },
+  {
+    "siteId": 7,
+    "channelId": "CH42",
+    "layoutX": 70,
+    "layoutY": 55,
+    "displayName": ""
+  },
+  {
+    "siteId": 8,
+    "channelId": "CH41",
+    "layoutX": 50,
+    "layoutY": 50,
+    "displayName": ""
+  },
+  {
+    "siteId": 10,
+    "channelId": "CH41",
+    "layoutX": 40,
+    "layoutY": 35,
+    "displayName": ""
+  },
+  {
+    "siteId": 10,
+    "channelId": "CH42",
+    "layoutX": 60,
+    "layoutY": 65,
+    "displayName": ""
+  },
+  {
+    "siteId": 2001,
+    "channelId": "CH40",
+    "layoutX": 60,
+    "layoutY": 65,
+    "displayName": "kgd-dreacu"
+  }
+]

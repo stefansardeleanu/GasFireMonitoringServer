@@ -75,6 +75,7 @@
 	<!-- Ensure logs directory exists -->
 	<ItemGroup>
 		<Folder Include="logs\" />
+		<Folder Include="Resources\Controls\" />
 		<Folder Include="wwwroot\layouts\" />
 		<Folder Include="Configuration\Data\" />
 	</ItemGroup>
